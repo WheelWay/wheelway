@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="kopo.poly.mapper.IUserInfoMapper">
+    <!-- 회원 가입 전 아이디 중복체크 -->
+    <select id="getUsernameExists" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT IF(COUNT(USERNAME) &gt; 0, 'Y', 'N') AS EXISTS_YN
+        FROM USERS
+        WHERE USERNAME = #{username}
+    </select>
+
+    <!-- 회원 가입 전 이메일 중복체크 -->
+    <select id="getEmailExists" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT IF(COUNT(USERNAME) &gt; 0, 'Y', 'N') AS EXISTS_YN
+        FROM USERS
+        WHERE EMAIL = #{email}
+    </select>
+
+    <!-- 회원 가입하기(회원정보 등록하기) -->
+    <insert id="insertUserInfo" parameterType="UserInfoDTO">
+        INSERT INTO USERS
+        (
+            USERNAME,
+            PASSWORD_HASH,
+            NAME,
+            EMAIL,
+            ROLE,
+            WHEELCHAIR_TYPE,
+            PRIVACY_AGREED_AT
+        )
+        VALUES
+        (
+            #{username},
+            #{passwordHash},
+            #{name},
+            #{email},
+            #{role},
+            #{wheelchairType},
+            #{privacyAgreedAt}
+        )
+    </insert>
+</mapper>
