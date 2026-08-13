@@ -7,41 +7,40 @@
     <title>WheelWay | 회원가입</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <style>
-        :root { --ww-blue:#1688e8; --ww-cream:#ffe1b1; --ww-orange:#eda863; }
-        body { min-height:100vh; background:#f5f6f8; font-family:"Noto Sans KR","Malgun Gothic",sans-serif; }
-        .page-shell { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:28px max(20px, 2vw); }
-        .signup-panel { width:100%; max-width:1940px; min-height:calc(100vh - 56px); display:flex; flex-direction:column; justify-content:center; background:var(--ww-cream); border:2px solid var(--ww-blue); }
-        .signup-form { width:100%; max-width:620px; }
-        .form-control { min-height:46px; border:2px solid var(--ww-blue); border-radius:1.5rem; }
-        .form-control:focus { border-color:var(--ww-blue); box-shadow:0 0 0 .22rem rgb(22 136 232 / 18%); }
-        .input-group .form-control { border-radius:1.5rem 0 0 1.5rem; }
-        .input-group .btn { min-width:92px; border:2px solid var(--ww-blue); border-left:0; border-radius:0 1.5rem 1.5rem 0; }
-        .btn-check-action { background:var(--ww-orange); color:#fff; }
-        .btn-check-action:hover { background:#df914b; color:#fff; }
-        .btn-signup { background:var(--ww-blue); border-color:var(--ww-blue); border-radius:1.5rem; min-height:48px; }
-        .btn-signup:hover { background:#0674cf; border-color:#0674cf; }
-        .form-check-input { width:1.7rem; height:1.7rem; margin-top:.05rem; border:2px solid var(--ww-blue); }
-        .form-check-input:checked { background-color:var(--ww-blue); border-color:var(--ww-blue); }
-        .feedback { min-height:1.2rem; font-size:.8rem; }
-        @media (min-width:1200px) {
-            .signup-panel { padding:4rem 5rem !important; }
-            .signup-form { max-width:640px; }
-            .signup-panel h1 { font-size:2rem; margin-bottom:2rem !important; }
-        }
-        @media (max-width:767.98px) {
-            .page-shell { align-items:flex-start; padding:12px; }
-            .signup-panel { min-height:auto; padding:2rem 1.25rem !important; }
-        }
-        @media (max-width:420px) {
-            .input-group .btn { min-width:78px; padding-inline:.5rem; font-size:.82rem; }
-            .signup-panel h1 { font-size:1.5rem; }
-        }
+        :root { --panel:#ffdfae; --line:#c99094; --button:#efad72; --page:#f4f4f4; }
+        body { min-height:100vh; background:var(--page); color:#050505; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
+        .page-shell { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:34px 4.4vw; }
+        .signup-panel { width:100%; max-width:1700px; aspect-ratio:1.83 / 1; display:flex; flex-direction:column; justify-content:center; background:var(--panel); border:0; }
+        .signup-form { width:44%; max-width:760px; }
+        .signup-panel h1 { font-size:clamp(1.8rem, 2vw, 2.45rem); font-weight:800 !important; letter-spacing:-.1em; }
+        .form-label, legend, .form-check-label { font-size:clamp(.92rem, 1vw, 1.1rem); font-weight:800 !important; letter-spacing:-.07em; }
+        .form-control { min-height:clamp(42px, 2.7vw, 54px); padding:0 1.2rem; border:1.5px solid var(--line); border-radius:1.5rem; background:#fff; font-size:clamp(.82rem, .92vw, 1rem); }
+        .form-control::placeholder { color:#a2a2a2; font-weight:600; }
+        .form-control:focus { border-color:var(--line); box-shadow:0 0 0 .16rem rgb(201 144 148 / 18%); }
+        .input-group .form-control { border-radius:1.5rem 0 0 1.5rem; border-right:0; }
+        .input-group .btn { min-width:clamp(86px, 5vw, 112px); border:1.5px solid var(--line); border-left:0; border-radius:0 1.5rem 1.5rem 0; font-size:clamp(.8rem, .85vw, .95rem); }
+        .btn-check-action { background:var(--button); color:#fff; }
+        .btn-check-action:hover, .btn-check-action:focus { background:#e69c61; color:#fff; border-color:var(--line); }
+        .btn-eye { min-width:45px !important; padding:0; background:#fff; color:#8e8e8e; }
+        .btn-eye:hover, .btn-eye:focus { background:#fff; color:#555; border-color:var(--line); }
+        .eye-icon { width:17px; height:17px; fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.6; }
+        .btn-signup { background:var(--button); border-color:var(--line); border-radius:1.5rem; min-height:clamp(43px, 2.8vw, 56px); font-size:clamp(.9rem, 1vw, 1.1rem); }
+        .btn-signup:hover, .btn-signup:focus { background:#e69c61; border-color:var(--line); }
+        .form-check-input { width:1.75rem; height:1.75rem; margin-top:.05rem; border:2px solid #6d6d6d; border-radius:.55rem; background:#e8e1d5; }
+        .form-check-input:checked { background-color:var(--button); border-color:#6d6d6d; }
+        .feedback { min-height:1rem; margin-left:.65rem; font-size:.75rem; font-weight:700; }
+        .form-text { color:#ff1616; font-size:.72rem; font-weight:700; }
+        .is-valid, .is-invalid { background-image:none !important; padding-right:1.2rem !important; }
+        .is-valid { border-color:#80a973 !important; } .is-invalid { border-color:var(--line) !important; }
+        @media (min-width:1200px) { .signup-panel { padding:3.2rem 5rem !important; } }
+        @media (max-width:767.98px) { .page-shell { align-items:flex-start; padding:12px; } .signup-panel { min-height:auto; aspect-ratio:auto; padding:2rem 1.25rem !important; } .signup-form { width:100%; max-width:510px; } }
+        @media (max-width:420px) { .input-group .btn { min-width:76px; padding-inline:.35rem; font-size:.74rem; } .signup-panel h1 { font-size:1.5rem; } }
     </style>
 </head>
 <body>
 <main class="container-fluid page-shell">
     <section class="signup-panel p-4 p-md-5" aria-labelledby="signup-title">
-        <h1 id="signup-title" class="h3 fw-bold text-center text-decoration-underline mb-4">회원가입</h1>
+        <h1 id="signup-title" class="h3 fw-bold text-center mb-4">회원가입</h1>
         <form id="signupForm" class="signup-form mx-auto" novalidate>
             <div class="mb-3">
                 <label for="username" class="form-label fw-bold">아이디</label>
@@ -56,7 +55,9 @@
                 <label for="password" class="form-label fw-bold">비밀번호</label>
                 <div class="input-group">
                     <input id="password" class="form-control" type="password" minlength="8" maxlength="72" autocomplete="new-password" placeholder="비밀번호 입력" required>
-                    <button class="btn btn-outline-primary fw-bold" id="passwordToggle" type="button">표시</button>
+                    <button class="btn btn-eye" id="passwordToggle" type="button" aria-label="비밀번호 표시 또는 숨김">
+                        <svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                    </button>
                 </div>
                 <div class="form-text ms-2">8~72자 영문, 숫자, 특수문자를 조합해 입력해 주세요.</div>
             </div>
@@ -153,7 +154,8 @@
     document.getElementById('passwordToggle').addEventListener('click', function () {
         const input = document.getElementById('password');
         input.type = input.type === 'password' ? 'text' : 'password';
-        this.textContent = input.type === 'password' ? '표시' : '숨김';
+        this.setAttribute('aria-label', input.type === 'password' ? '비밀번호 표시' : '비밀번호 숨김');
+        this.setAttribute('aria-pressed', input.type === 'text');
     });
 
     form.addEventListener('submit', async event => {
