@@ -5,6 +5,12 @@ import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
 public interface IUserInfoMapper {
+    UserInfoDTO getLogin(UserInfoDTO pDTO) throws Exception;
+
+    UserInfoDTO getUserId(UserInfoDTO pDTO) throws Exception;
+
+    int updatePassword(UserInfoDTO pDTO) throws Exception;
+
     // 회원가입 전 아이디 중복 체크(DB 조회하기)
     UserInfoDTO getUsernameExists(UserInfoDTO pDTO) throws Exception;
 
