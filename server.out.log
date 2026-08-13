@@ -1,0 +1,63 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------------------< kopo:wheelway >----------------------------
+[INFO] Building wheelway 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ war ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:4.0.7:run (default-cli) > test-compile @ wheelway >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ wheelway ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 3 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ wheelway ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ wheelway ---
+[INFO] skip non existing resourceDirectory C:\wheelway\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ wheelway ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:4.0.7:run (default-cli) < test-compile @ wheelway <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:4.0.7:run (default-cli) @ wheelway ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.0.7)
+
+2026-08-13T19:05:57.679+09:00  INFO 21688 --- [wheelway] [  restartedMain] kopo.poly.WheelwayApplication            : Starting WheelwayApplication using Java 17.0.14 with PID 21688 (C:\wheelway\target\classes started by data8320-20 in C:\wheelway)
+2026-08-13T19:05:57.684+09:00  INFO 21688 --- [wheelway] [  restartedMain] kopo.poly.WheelwayApplication            : No active profile set, falling back to 1 default profile: "default"
+2026-08-13T19:05:57.757+09:00  INFO 21688 --- [wheelway] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-08-13T19:05:57.758+09:00  INFO 21688 --- [wheelway] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-08-13T19:05:59.031+09:00  INFO 21688 --- [wheelway] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+2026-08-13T19:05:59.052+09:00  INFO 21688 --- [wheelway] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-08-13T19:05:59.053+09:00  INFO 21688 --- [wheelway] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-08-13T19:05:59.315+09:00  INFO 21688 --- [wheelway] [  restartedMain] org.apache.jasper.servlet.TldScanner     : At least one JAR was scanned for TLDs yet contained no TLDs. Enable debug logging for this logger for a complete list of JARs that were scanned but no TLDs were found in them. Skipping unneeded JARs during scanning can improve startup time and JSP compilation time.
+2026-08-13T19:05:59.330+09:00  INFO 21688 --- [wheelway] [  restartedMain] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 1570 ms
+2026-08-13T19:06:00.087+09:00  INFO 21688 --- [wheelway] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+2026-08-13T19:06:00.099+09:00  INFO 21688 --- [wheelway] [  restartedMain] kopo.poly.WheelwayApplication            : Started WheelwayApplication in 2.982 seconds (process running for 3.62)
+2026-08-13T19:06:13.422+09:00  INFO 21688 --- [wheelway] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-08-13T19:06:13.424+09:00  INFO 21688 --- [wheelway] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-08-13T19:06:13.426+09:00  INFO 21688 --- [wheelway] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-08-13T19:08:23.991+09:00  INFO 21688 --- [wheelway] [nio-8080-exec-8] kopo.poly.controller.UserController      : kopo.poly.controller.UserController.userRegForm
+-
+[INFO] Total time:  06:00 min
+[INFO] Finished at: 2026-08-13T19:05:52+09:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:4.0.7:run (default-cli) on project wheelway: Process terminated with exit code: -1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

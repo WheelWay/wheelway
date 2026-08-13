@@ -1,0 +1,265 @@
+* { box-sizing: border-box; }
+
+body.main-body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #f3f3f3;
+    color: #111;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+}
+
+.main-shell {
+    width: min(92.3vw, 1740px);
+    min-height: calc(100vh - 130px);
+    margin: 65px auto 20px;
+    background: #fff;
+}
+
+.main-header {
+    height: 57px;
+    display: flex;
+    align-items: center;
+    padding: 0 0 0 22px;
+    background: #ffdfae;
+}
+
+.main-wordmark {
+    margin-right: auto;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -.8px;
+    text-decoration: none;
+}
+
+.header-actions {
+    display: flex;
+    width: 340px;
+    height: 57px;
+    flex: 0 0 340px;
+    gap: 0;
+    overflow: visible;
+    border-radius: 0;
+    background: #ffdfae;
+}
+
+.header-button {
+    min-width: 0;
+    height: 100%;
+    flex: 1 1 50%;
+    display: grid;
+    place-items: center;
+    border-radius: 0;
+    background: #ffdfae;
+    color: #111;
+    font-size: 24px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background-color .15s ease;
+}
+
+.header-button:hover,
+.header-button:focus-visible,
+.header-button:active { background: #ffcc55; }
+
+/* hover 시에는 색상만 변경하고, 헤더 끝까지 네모난 모양을 유지 */
+.header-button:first-child:hover,
+.header-button:first-child:focus-visible,
+.header-button:first-child:active { border-radius: 28px 0 0 28px; }
+
+.header-button:last-child:hover,
+.header-button:last-child:focus-visible,
+.header-button:last-child:active { border-radius: 0; }
+
+.main-content {
+    min-height: calc(100vh - 207px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 85px 20px 120px;
+}
+
+.main-logo {
+    width: clamp(195px, 17vw, 315px);
+    height: auto;
+    transform: translateY(55px);
+}
+
+.transport-menu {
+    display: flex;
+    justify-content: center;
+    gap: clamp(80px, 10vw, 220px);
+    margin-top: clamp(65px, 7vw, 135px);
+}
+
+.transport-button {
+    width: clamp(105px, 9vw, 145px);
+    height: clamp(105px, 9vw, 145px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    border: 2px solid #c99094;
+    border-radius: 22px;
+    background: #fff1d9;
+    color: #111;
+    cursor: pointer;
+}
+
+.transport-button:hover { background: #ffe5bd; }
+.transport-icon { width: clamp(48px, 4vw, 72px); height: clamp(48px, 4vw, 72px); }
+.transport-label { font-size: clamp(17px, 1.45vw, 25px); font-weight: 700; line-height: 1; }
+
+.login-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    place-items: center;
+    padding: 20px;
+    background: rgba(45, 45, 45, .18);
+}
+
+.login-modal.is-open,
+.login-modal:target { display: grid; }
+
+.login-modal-card {
+    width: min(700px, calc(100vw - 40px));
+    min-height: 530px;
+    display: grid;
+    grid-template-columns: 1fr 1.08fr;
+    overflow: hidden;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .05);
+}
+
+/* 아이디·비밀번호 찾기는 로고 없이 단일 카드로 표시한다. */
+.login-modal-card.is-compact {
+    width: min(400px, calc(100vw - 40px));
+    min-height: 530px;
+    grid-template-columns: 1fr;
+}
+
+.login-modal-card.is-compact .login-modal-brand { display: none; }
+.login-modal-card.is-compact .login-modal-form-area { padding: 72px 42px 54px; }
+.login-modal-card.is-compact .login-modal-form-area h1 { margin-bottom: 40px; font-size: 30px; }
+.login-modal-card.is-compact .modal-login-field { margin-bottom: 25px; }
+
+.login-modal-form-area {
+    position: relative;
+    min-width: 0;
+    padding: 82px 42px 54px;
+    background: #ffdfae;
+}
+
+.login-modal-form-area h1 {
+    margin: 0 0 45px;
+    text-align: center;
+    font-size: 36px;
+    font-weight: 500;
+}
+
+.modal-panel { display: none; }
+.modal-panel.is-active { display: block; }
+
+.login-modal-close {
+    position: absolute;
+    top: 15px;
+    right: 17px;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    color: #765c46;
+    font-size: 30px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-login-field { margin-bottom: 25px; }
+
+.modal-login-field input {
+    width: 100%;
+    height: 48px;
+    padding: 7px 20px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    outline: none;
+    background: #fafafa;
+    color: #111;
+    font-size: 15px;
+}
+
+.modal-login-field input:focus { box-shadow: 0 0 0 2px rgba(201, 144, 148, .2); }
+
+.modal-find-row {
+    display: flex;
+    justify-content: center;
+    gap: 65px;
+    margin-top: -4px;
+}
+
+.modal-find-row a { color: #222; font-size: 12px; text-decoration: none; }
+.modal-find-row a:hover { text-decoration: underline; }
+
+.modal-back-row { margin-top: 18px; text-align: center; }
+.modal-back-row a { color: #222; font-size: 12px; text-decoration: none; }
+.modal-back-row a:hover { text-decoration: underline; }
+
+.modal-login-submit {
+    width: 100%;
+    height: 48px;
+    margin-top: 20px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    background: #efad72;
+    color: #fff;
+    font-size: 19px;
+    cursor: pointer;
+}
+
+.login-modal-brand {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    padding: 26px 18px;
+    background: #fff;
+}
+
+.login-modal-brand svg { width: min(100%, 335px); height: auto; }
+
+@media (max-width: 560px) {
+    .login-modal-card { grid-template-columns: 1fr; min-height: 0; }
+    .login-modal-brand { min-height: 175px; }
+    .login-modal-form-area { padding-top: 43px; }
+}
+
+@media (max-width: 767px) {
+    .main-shell { width: calc(100% - 24px); min-height: calc(100vh - 24px); margin: 12px auto; }
+    .main-header { height: 50px; padding: 0 0 0 14px; }
+    .main-wordmark { font-size: 18px; }
+    .header-actions { width: 144px; height: 38px; flex: 0 0 144px; gap: 0; border-radius: 0; }
+    .header-button { min-width: 0; height: 38px; border-radius: 0; font-size: 13px; }
+    .header-button:first-child:hover,
+    .header-button:first-child:focus-visible,
+    .header-button:first-child:active { border-radius: 18px 0 0 18px; }
+    .header-button:last-child:hover,
+    .header-button:last-child:focus-visible,
+    .header-button:last-child:active { border-radius: 0; }
+    .main-content { min-height: calc(100vh - 74px); padding: 56px 12px 80px; }
+    .transport-menu { width: 100%; gap: 16px; margin-top: 65px; }
+    .transport-button { flex: 1; max-width: 112px; height: 100px; border-radius: 16px; }
+    .transport-label { font-size: 16px; }
+}
+
+/* 1980 x 1080 화면을 기준으로 한 메인 레이아웃 */
+@media (min-width: 1600px) {
+    .main-shell { width: 1740px; min-height: 945px; margin-top: 65px; }
+    .main-header { height: 57px; }
+    .header-actions { width: 340px; height: 57px; flex-basis: 340px; }
+}

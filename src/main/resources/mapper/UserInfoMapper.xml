@@ -4,6 +4,39 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="kopo.poly.mapper.IUserInfoMapper">
+    <!-- Login compares the SHA-256 hash of the supplied password. -->
+    <select id="getLogin" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME,
+            ROLE,
+            WHEELCHAIR_TYPE
+        FROM USERS
+        WHERE USERNAME = #{username}
+          AND PASSWORD_HASH = #{passwordHash}
+    </select>
+
+    <!-- 아이디 찾기: 이름과 AES 암호화 이메일로 USERNAME을 조회한다.
+         비밀번호 찾기에서는 USERNAME까지 함께 비교한다. -->
+    <select id="getUserId" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME
+        FROM USERS
+        WHERE NAME = #{name}
+          AND EMAIL = #{email}
+        <if test="username != null and username != ''">
+            AND USERNAME = #{username}
+        </if>
+    </select>
+
+    <!-- 비밀번호 재설정 -->
+    <update id="updatePassword" parameterType="UserInfoDTO">
+        UPDATE USERS
+        SET PASSWORD_HASH = #{passwordHash}
+        WHERE USERNAME = #{username}
+    </update>
+
     <!-- 회원 가입 전 아이디 중복체크 -->
     <select id="getUsernameExists" parameterType="UserInfoDTO" resultType="UserInfoDTO">
         SELECT IF(COUNT(USERNAME) &gt; 0, 'Y', 'N') AS EXISTS_YN
