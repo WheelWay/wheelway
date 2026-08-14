@@ -1,4 +1,7 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%
+    boolean isLoggedIn = session.getAttribute("SS_USER_ID") != null;
+%>
 <!doctype html>
 <html lang="ko">
 <head>
@@ -6,15 +9,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WheelWay</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/main.css?v=20260813-8" rel="stylesheet">
+    <link href="/css/main.css?v=20260814-1" rel="stylesheet">
 </head>
 <body class="main-body">
 <main class="main-shell">
     <header class="main-header">
         <a class="main-wordmark" href="/">WheelWay</a>
-        <nav class="header-actions" aria-label="사용자 메뉴">
-            <a id="openLoginModal" class="header-button" href="#loginModal">로그인</a>
-            <a class="header-button" href="/user/userRegForm">회원가입</a>
+        <nav class="header-actions<%= isLoggedIn ? " is-member" : "" %>" aria-label="사용자 메뉴">
+            <% if (isLoggedIn) { %>
+                <button class="header-button my-page-button" type="button">마이페이지</button>
+            <% } else { %>
+                <a id="openLoginModal" class="header-button" href="#loginModal">로그인</a>
+                <a class="header-button" href="/user/userRegForm">회원가입</a>
+            <% } %>
         </nav>
     </header>
 
@@ -156,13 +163,16 @@
         showModalPanel('loginPanel');
     }
 
-    document.getElementById('openLoginModal').addEventListener('click', event => {
-        event.preventDefault();
-        loginModal.classList.add('is-open');
-        loginModal.setAttribute('aria-hidden', 'false');
-        showModalPanel('loginPanel');
-        modalUserId.focus();
-    });
+    const openLoginModal = document.getElementById('openLoginModal');
+    if (openLoginModal) {
+        openLoginModal.addEventListener('click', event => {
+            event.preventDefault();
+            loginModal.classList.add('is-open');
+            loginModal.setAttribute('aria-hidden', 'false');
+            showModalPanel('loginPanel');
+            modalUserId.focus();
+        });
+    }
 
     document.querySelectorAll('[data-modal-panel]').forEach(link => {
         link.addEventListener('click', event => {
@@ -185,8 +195,8 @@
         try {
             const response = await fetch('/user/loginProc', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}, body: new URLSearchParams(new FormData(modalLoginForm)) });
             const data = await response.json();
-            alert(data.msg);
-            if (data.result === 1) location.href = '/user/loginResult'; else modalUserId.focus();
+            if (data.result === 1) location.href = '/';
+            else { alert(data.msg); modalUserId.focus(); }
         } catch (error) { alert('서버에 연결하지 못했습니다.'); }
     });
 

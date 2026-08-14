@@ -57,8 +57,8 @@
         try {
             const response = await fetch('/user/loginProc', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}, body: new URLSearchParams(new FormData(form)) });
             const data = await response.json();
-            alert(data.msg);
-            if (data.result === 1) location.href = '/user/loginResult'; else userId.focus();
+            if (data.result === 1) location.href = '/';
+            else { alert(data.msg); userId.focus(); }
         } catch (error) { alert('서버에 연결하지 못했습니다.'); }
     });
 </script>
