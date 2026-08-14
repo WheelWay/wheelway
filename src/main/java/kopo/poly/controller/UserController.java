@@ -92,6 +92,13 @@ public class UserController {
         return "/user/loginResult";
     }
 
+    /** 로그인 세션을 종료한 뒤 메인 화면으로 이동 */
+    @GetMapping(value = "logout")
+    public String logout(HttpSession session) {
+        session.invalidate();
+        return "redirect:/";
+    }
+
     /** 아이디 찾기 입력 화면 */
     @GetMapping(value = "searchUserId")
     public String searchUserId() {

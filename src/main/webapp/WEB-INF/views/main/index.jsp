@@ -17,6 +17,7 @@
         <a class="main-wordmark" href="/">WheelWay</a>
         <nav class="header-actions<%= isLoggedIn ? " is-member" : "" %>" aria-label="사용자 메뉴">
             <% if (isLoggedIn) { %>
+                <a class="header-button" href="/user/logout">로그아웃</a>
                 <button class="header-button my-page-button" type="button">마이페이지</button>
             <% } else { %>
                 <a id="openLoginModal" class="header-button" href="#loginModal">로그인</a>

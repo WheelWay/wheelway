@@ -45,8 +45,8 @@ body.main-body {
 }
 
 .header-actions.is-member {
-    width: 170px;
-    flex-basis: 170px;
+    width: 340px;
+    flex-basis: 340px;
 }
 
 .header-button {
@@ -266,7 +266,7 @@ body.main-body {
     .header-button:last-child:hover,
     .header-button:last-child:focus-visible,
     .header-button:last-child:active { border-radius: 0; }
-    .header-actions.is-member { width: 72px; flex-basis: 72px; }
+    .header-actions.is-member { width: 144px; flex-basis: 144px; }
     .header-actions.is-member .header-button:hover,
     .header-actions.is-member .header-button:focus-visible,
     .header-actions.is-member .header-button:active { border-radius: 18px 0 0 18px; }
