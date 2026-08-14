@@ -11,11 +11,14 @@
         body { min-height:100vh; background:var(--page); color:#050505; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
         .page-shell { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:34px 4.4vw; }
         .signup-panel { width:100%; max-width:1700px; aspect-ratio:1.83 / 1; display:flex; flex-direction:column; justify-content:center; background:var(--panel); border:0; }
-        .signup-form { width:44%; max-width:760px; }
+        /* 넓은 화면에서 입력창이 지나치게 길어 보이지 않도록 폼 폭을 제한한다. */
+        .signup-form { width:33%; max-width:570px; }
         .signup-panel h1 { font-size:clamp(1.8rem, 2vw, 2.45rem); font-weight:800 !important; letter-spacing:-.1em; }
         .form-label, legend, .form-check-label { font-size:clamp(.92rem, 1vw, 1.1rem); font-weight:800 !important; letter-spacing:-.07em; }
         .form-control { min-height:clamp(42px, 2.7vw, 54px); padding:0 1.2rem; border:1.5px solid var(--line); border-radius:1.5rem; background:#fff; font-size:clamp(.82rem, .92vw, 1rem); }
         .form-control::placeholder { color:#a2a2a2; font-weight:600; }
+        /* Edge의 기본 비밀번호 표시 아이콘은 숨기고, 오른쪽의 자체 눈 버튼만 사용한다. */
+        .form-control::-ms-reveal, .form-control::-ms-clear { display:none; }
         .form-control:focus { border-color:var(--line); box-shadow:0 0 0 .16rem rgb(201 144 148 / 18%); }
         .input-group .form-control { border-radius:1.5rem 0 0 1.5rem; border-right:0; }
         .input-group .btn { min-width:clamp(86px, 5vw, 112px); border:1.5px solid var(--line); border-left:0; border-radius:0 1.5rem 1.5rem 0; font-size:clamp(.8rem, .85vw, .95rem); }
@@ -63,6 +66,17 @@
             </div>
 
             <div class="mb-3">
+                <label for="passwordConfirm" class="form-label fw-bold">비밀번호 확인</label>
+                <div class="input-group">
+                    <input id="passwordConfirm" class="form-control" type="password" name="passwordConfirm" autocomplete="new-password" placeholder="비밀번호 입력" required>
+                    <button class="btn btn-eye" id="passwordConfirmToggle" type="button" aria-label="비밀번호 확인 표시">
+                        <svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                    </button>
+                </div>
+                <div class="feedback mt-1" id="passwordConfirmMessage" aria-live="polite"></div>
+            </div>
+
+            <div class="mb-3">
                 <label for="name" class="form-label fw-bold">이름</label>
                 <input id="name" class="form-control" type="text" maxlength="50" autocomplete="name" placeholder="이름 입력" required>
             </div>
@@ -74,7 +88,6 @@
                     <button class="btn btn-check-action fw-bold" id="emailCheck" type="button">중복확인</button>
                 </div>
                 <div class="feedback mt-1" id="emailMessage" aria-live="polite"></div>
-                <div class="form-text ms-2">이메일은 AES128CBC로 암호화하여 저장됩니다.</div>
             </div>
 
             <fieldset class="mb-4">
@@ -158,9 +171,48 @@
         this.setAttribute('aria-pressed', input.type === 'text');
     });
 
+    document.getElementById('passwordConfirmToggle').addEventListener('click', function () {
+        const input = document.getElementById('passwordConfirm');
+        input.type = input.type === 'password' ? 'text' : 'password';
+        this.setAttribute('aria-label', input.type === 'password' ? '비밀번호 확인 표시' : '비밀번호 확인 숨김');
+        this.setAttribute('aria-pressed', input.type === 'text');
+    });
+
+    function passwordMatches() {
+        const password = document.getElementById('password');
+        const passwordConfirm = document.getElementById('passwordConfirm');
+        const message = document.getElementById('passwordConfirmMessage');
+
+        if (passwordConfirm.value === '') {
+            passwordConfirm.setCustomValidity('');
+            passwordConfirm.classList.remove('is-valid', 'is-invalid');
+            message.className = 'feedback mt-1';
+            message.textContent = '';
+            return false;
+        }
+
+        const matches = password.value !== '' && password.value === passwordConfirm.value;
+        passwordConfirm.setCustomValidity(matches ? '' : '비밀번호가 동일하지 않습니다.');
+        passwordConfirm.classList.toggle('is-valid', matches);
+        passwordConfirm.classList.toggle('is-invalid', !matches);
+        message.className = 'feedback mt-1 ' + (matches ? 'text-success' : 'text-danger');
+        message.textContent = matches ? '비밀번호가 동일합니다.' : '비밀번호가 동일하지 않습니다.';
+        return matches;
+    }
+
+    ['password', 'passwordConfirm'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+        passwordMatches();
+        document.getElementById('formMessage').textContent = '';
+    }));
+
     form.addEventListener('submit', async event => {
         event.preventDefault();
         if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+        if (!passwordMatches()) {
+            setMessage('formMessage', '비밀번호와 비밀번호 확인이 일치하지 않습니다.', false);
+            document.getElementById('passwordConfirm').focus();
+            return;
+        }
         try {
             if (!checked.username && !await checkDuplicate('username')) return;
             if (!checked.email && !await checkDuplicate('email')) return;
@@ -168,6 +220,7 @@
             const requestBody = new URLSearchParams();
             requestBody.append('username', document.getElementById('username').value.trim());
             requestBody.append('password', document.getElementById('password').value);
+            requestBody.append('passwordConfirm', document.getElementById('passwordConfirm').value);
             requestBody.append('name', document.getElementById('name').value.trim());
             requestBody.append('email', document.getElementById('email').value.trim());
             requestBody.append('wheelchairType', form.querySelector('input[name="wheelchairType"]:checked')?.value || '');
@@ -179,7 +232,10 @@
             });
             const data = await response.json();
             setMessage('formMessage', data.msg, data.result === 1);
-            if (data.result === 1) { form.reset(); checked.username = checked.email = false; form.classList.remove('was-validated'); }
+            if (data.result === 1) {
+                alert(data.msg);
+                location.href = '/';
+            }
         } catch (error) {
             setMessage('formMessage', '서버에 연결하지 못했습니다. Spring Boot 실행 상태를 확인해 주세요.', false);
         } finally { submitButton.disabled = false; }

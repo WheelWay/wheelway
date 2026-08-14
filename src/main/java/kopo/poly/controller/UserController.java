@@ -225,10 +225,18 @@ public class UserController {
         try {
             String username = CmmUtil.nvl(request.getParameter("username"));
             String password = CmmUtil.nvl(request.getParameter("password"));
+            String passwordConfirm = CmmUtil.nvl(request.getParameter("passwordConfirm"));
             String name = CmmUtil.nvl(request.getParameter("name"));
             String email = CmmUtil.nvl(request.getParameter("email"));
             String wheelchairType = CmmUtil.nvl(request.getParameter("wheelchairType"));
             String privacyAgreed = CmmUtil.nvl(request.getParameter("privacyAgreed"));
+
+            if (password.isBlank() || !password.equals(passwordConfirm)) {
+                msg = "비밀번호와 비밀번호 확인이 일치하지 않습니다.";
+                dto.setResult(result);
+                dto.setMsg(msg);
+                return dto;
+            }
 
             UserInfoDTO pDTO = new UserInfoDTO();
             pDTO.setUsername(username);

@@ -44,6 +44,11 @@ body.main-body {
     background: #ffdfae;
 }
 
+.header-actions.is-member {
+    width: 170px;
+    flex-basis: 170px;
+}
+
 .header-button {
     min-width: 0;
     height: 100%;
@@ -59,6 +64,12 @@ body.main-body {
     transition: background-color .15s ease;
 }
 
+.my-page-button {
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+}
+
 .header-button:hover,
 .header-button:focus-visible,
 .header-button:active { background: #ffcc55; }
@@ -71,6 +82,10 @@ body.main-body {
 .header-button:last-child:hover,
 .header-button:last-child:focus-visible,
 .header-button:last-child:active { border-radius: 0; }
+
+.header-actions.is-member .header-button:hover,
+.header-actions.is-member .header-button:focus-visible,
+.header-actions.is-member .header-button:active { border-radius: 28px 0 0 28px; }
 
 .main-content {
     min-height: calc(100vh - 207px);
@@ -251,6 +266,10 @@ body.main-body {
     .header-button:last-child:hover,
     .header-button:last-child:focus-visible,
     .header-button:last-child:active { border-radius: 0; }
+    .header-actions.is-member { width: 72px; flex-basis: 72px; }
+    .header-actions.is-member .header-button:hover,
+    .header-actions.is-member .header-button:focus-visible,
+    .header-actions.is-member .header-button:active { border-radius: 18px 0 0 18px; }
     .main-content { min-height: calc(100vh - 74px); padding: 56px 12px 80px; }
     .transport-menu { width: 100%; gap: 16px; margin-top: 65px; }
     .transport-button { flex: 1; max-width: 112px; height: 100px; border-radius: 16px; }
