@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>공사구간 수정</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; font-family: "맑은 고딕", sans-serif; }
+        #map { width: 100%; height: 100%; }
+        /* 스크린샷에 좌표를 남기는 표시. 그림만 보고 픽셀↔좌표 환산을 할 수 있게 한다.
+           왼쪽 아래는 #panel 과 카카오 축척바가 차지하므로 오른쪽 아래에 둔다. */
+        #geo {
+            position: fixed; right: 8px; bottom: 8px; z-index: 10000;
+            background: rgba(255,255,255,.92); border: 1px solid #ccc; border-radius: 3px;
+            padding: 3px 7px; font: 11px/1.5 monospace; color: #333; white-space: pre;
+            pointer-events: none;
+        }
+
+        #panel {
+            position: absolute; top: 12px; left: 12px; z-index: 10;
+            width: 300px; padding: 14px 16px;
+            background: rgba(255, 255, 255, .96);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 13px; line-height: 1.6;
+        }
+        #panel h1 { margin: 0 0 8px; font-size: 15px; }
+        #panel .hint { color: #555; margin-bottom: 10px; }
+        #panel label { display: block; cursor: pointer; }
+        #panel a { color: #1565c0; font-size: 12px; }
+
+        #status { padding: 6px 8px; border-radius: 5px; margin-bottom: 8px; }
+        .ok   { background: #e8f5e9; color: #1b5e20; }
+        .fail { background: #ffebee; color: #b71c1c; }
+        .wait { background: #f2f2f2; color: #555; }
+
+        .legend i { display: inline-block; width: 22px; height: 4px; vertical-align: middle; margin-right: 6px; }
+        .row { display: flex; justify-content: space-between; }
+        .row span:last-child { font-weight: bold; }
+        hr { border: 0; border-top: 1px solid #e3e3e3; margin: 10px 0; }
+
+        /* 기본 Marker 는 클릭을 자기가 먹어 지도 클릭을 막는다. 그래서 전부 CustomOverlay 다. */
+        .zone {
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #ff9800; border: 2px solid #fff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+            transition: opacity .15s;
+        }
+        /*
+         * 수정 중인 공사의 원래 자리. 옮긴 위치에는 분홍 원이 생기므로 그대로 두면
+         * 주황·분홍 두 개가 같이 보여 어느 쪽이 지금 값인지 헷갈린다.
+         * 지우지 않고 흐리게만 두는 이유는 얼마나 옮겼는지가 보여야 하기 때문이다.
+         */
+        .zone.was { opacity: .25; box-shadow: none; }
+
+        /*
+         * 기준선의 양 끝 손잡이. 이것도 CustomOverlay 다 - 클릭을 받게 하면
+         * 지도 클릭을 삼켜서 '끝점을 옮기는 클릭' 자체가 안 들어온다.
+         */
+        .nend {
+            width: 12px; height: 12px; margin: -6px 0 0 -6px;
+            background: #111; border: 2px solid #fff; border-radius: 2px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .6);
+            font: bold 9px/9px sans-serif; color: #fff; text-align: center; padding-top: 1px;
+        }
+        .nend.on { background: #d81b60; }
+
+        #editor {
+            position: absolute; top: 12px; right: 12px; z-index: 10;
+            width: 320px; padding: 14px 16px;
+            background: rgba(255, 255, 255, .97);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 13px; line-height: 1.6;
+        }
+        #editor h2 { margin: 0 0 6px; font-size: 14px; }
+        #editor .name { font-weight: bold; margin-bottom: 2px; }
+        #editor .sub { color: #666; font-size: 12px; margin-bottom: 10px; }
+        #editor input[type=range] { width: 100%; }
+        #editor .btns { display: flex; gap: 6px; margin-top: 10px; }
+        #editor button { flex: 1; padding: 7px; cursor: pointer;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 5px; font-size: 13px; }
+        #editor button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
+        #ed-list { max-height: 240px; overflow-y: auto; margin-top: 8px;
+            border-top: 1px solid #e3e3e3; padding-top: 6px; }
+        #ed-list div { padding: 3px 4px; cursor: pointer; border-radius: 4px; font-size: 12px; }
+        #ed-list div:hover { background: #f0f0f0; }
+        #ed-list .bad { color: #c62828; }
+
+        /*
+         * 제보. 공사와 같은 원형이고 색으로만 구분한다.
+         * 신호등 색을 쓰는 이유는 정도가 곧 통행 가능 여부라서다 - 빨강이 '통행 불가'다.
+         *
+         * 공사(주황 #ff9800)와 '보통'(노랑 #f9a825)이 가까운 계열이라는 문제가 남아 있다.
+         * 모양을 달리하면(마름모) 사라지는 문제지만, 우선 점으로 보기로 했다.
+         */
+        .rep {
+            width: 13px; height: 13px; border-radius: 50%;
+            border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+            transition: opacity .15s;
+        }
+        .rep.high { background: #d32f2f; }   /* 통행 불가 - 하드필터 */
+        .rep.mid  { background: #f9a825; }   /* 고려 - 경로 A/B */
+        .rep.low  { background: #2e7d32; }   /* 통행 가능 - 참고정보 */
+        /* 반려·해소. 지우지 않고 흐리게만 둔다 - '왜 여기가 안 막히지'의 답이 보여야 한다. */
+        .rep.off  { opacity: .3; box-shadow: none; }
+        /* 수정 중인 제보의 원래 자리. 공사의 .was 와 같은 이유다. */
+        .rep.was  { opacity: .25; box-shadow: none; }
+        /*
+         * 지금 찍고 있는 자리.
+         * 공사는 원래 주황 점이 그 자리에 있어서 클릭하면 '흐려진 원본 + 분홍 원'으로 옮긴 게 보이는데,
+         * 새 제보에는 기준이 될 점이 아예 없다. 반경 원만으로는 안 되는 것이,
+         * 기본값 5m 는 지도 레벨 5 에서 1~2px 이라 클릭이 먹었는지조차 알 수 없다.
+         */
+        .rep.picking {
+            width: 17px; height: 17px;
+            border: 3px solid #fff;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .5);
+        }
+
+        #rp-detail input[type=range] { width: 100%; }
+        #rp-detail select, #rp-detail textarea { width: 100%; font: inherit; font-size: 12px; }
+        #rp-detail textarea { height: 44px; resize: vertical; }
+        #rp-detail .btns { display: flex; gap: 6px; margin-top: 10px; }
+        #rp-detail button { flex: 1; padding: 7px; cursor: pointer;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 5px; font-size: 13px; }
+        #rp-detail button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
+        #rp-detail button.danger { background: #fff; color: #c62828; border-color: #e0a0a0; }
+
+        /* 정도 3택. 라디오를 버튼처럼 보이게 한다 - 셋 중 하나라는 것이 한눈에 보여야 한다. */
+        .rp-sev { display: flex; gap: 4px; margin: 2px 0 8px; }
+        .rp-sev label { flex: 1; text-align: center; font-size: 11px; line-height: 1.3;
+            padding: 4px 2px; border: 1px solid #c4c4c4; border-radius: 5px; cursor: pointer; }
+        .rp-sev input { display: none; }
+        .rp-sev label.low:has(input:checked)  { border-color: #2e7d32; color: #2e7d32; background: #e8f5e9; font-weight: bold; }
+        .rp-sev label.mid:has(input:checked)  { border-color: #f9a825; color: #a06800; background: #fff8e1; font-weight: bold; }
+        .rp-sev label.high:has(input:checked) { border-color: #d32f2f; color: #d32f2f; background: #ffebee; font-weight: bold; }
+
+        /* 사용자 화면이 보낼 세 값. 슬라이더만 있으면 그 값들이 어디쯤인지 안 보인다. */
+        .rp-preset { display: flex; gap: 4px; margin-top: 4px; }
+        .rp-preset button { flex: 1; font-size: 11px; padding: 3px 2px; cursor: pointer;
+            border: 1px solid #d0d0d0; background: #fafafa; border-radius: 4px; }
+
+        #rp-list { max-height: 150px; overflow-y: auto; margin-top: 6px; font-size: 12px; }
+        #rp-list div.row-r { padding: 3px 4px; cursor: pointer; border-radius: 4px;
+            display: flex; justify-content: space-between; gap: 6px; }
+        #rp-list div.row-r:hover { background: #f0f0f0; }
+        #rp-list .dim { opacity: .5; }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <h1>공사구간 수정</h1>
+    <div class="hint">
+        지오코딩 좌표가 필지 중심에 찍혀 실제 보도와 어긋난 것을 바로잡는 화면입니다.<br>
+        <!-- 여기서 고친 것이 사용자에게 어떻게 보이는지 바로 확인하도록 사용자 화면으로 보낸다.
+             네이버 화면은 지오코딩 비교용 잔재라 링크를 뺐다. -->
+        <a href="/map.html" target="_blank">이동경로 화면 ↗</a>
+    </div>
+
+    <div id="status" class="wait">지도를 불러오는 중…</div>
+
+    <label class="legend"><input type="checkbox" id="t-conline" checked>
+        <i style="background:#ff9800"></i>막히는 구간을 선으로 <span id="c-construction"></span></label>
+
+    <label class="legend"><input type="checkbox" id="t-noteline" checked>
+        <i style="background:#111"></i>기준선(사람이 그린 것) <span id="c-noteline"></span></label>
+
+    <label class="legend"><input type="checkbox" id="t-graph">
+        <i style="background:#26a69a"></i><i style="background:#e8833a"></i>그래프 엣지·노드
+        <span id="c-graph"></span></label>
+    <div class="hint" style="margin-left:22px; color:#888; font-size:11px">
+        초록=보도, 주황=차도. 두 색이 나란히 가는데 이어주는 선이 없으면 횡단보도가 빠진 자리다.</div>
+
+    <hr>
+    <!--
+      엣지 직접 수정. 좌표로 저장하므로 재적재해도 살아남는다(MANUAL_EDGES).
+      추가 = 빠진 횡단보도·끊긴 보도 연결 / 삭제 = 아파트를 가로지르는 등 실제로 못 다니는 엣지
+    -->
+    <div style="font-weight:bold; margin-bottom:4px">엣지 직접 수정</div>
+    <label class="legend"><input type="radio" name="emode" value="" checked> 끄기</label>
+    <label class="legend"><input type="radio" name="emode" value="추가"> <b>추가</b> — 두 점을 클릭</label>
+    <label class="legend"><input type="radio" name="emode" value="추가-고정">
+        <b>추가(고정)</b> — 찍은 자리 그대로</label>
+    <label class="legend"><input type="radio" name="emode" value="삭제"> <b>삭제</b> — 엣지 근처를 클릭</label>
+    <div class="sub" id="e-hint" style="margin-top:4px">끄기 상태입니다.</div>
+    <div class="btns" style="display:flex; gap:6px; margin-top:6px">
+        <button class="primary" id="e-apply" disabled>저장</button>
+        <button id="e-clear">취소</button>
+    </div>
+    <div id="e-list" style="max-height:150px; overflow-y:auto; margin-top:6px; font-size:12px"></div>
+
+    <div class="hint" style="margin-top:8px">
+        주황 점 근처를 클릭하거나 오른쪽 목록에서 고르세요.<br>
+        고른 뒤 지도를 클릭하면 그 자리로 옮깁니다.
+    </div>
+
+    <hr>
+    <!--
+      장애물 제보. 정도에 따라 하는 일이 셋으로 갈린다 - 이 화면은 그것을 눈으로 확인하는 자리다.
+        낮음  아무것도 안 막는다 (참고정보)
+        보통  차단하지 않고, 경로 A/B 를 만들 때 B 에서만 뺀다
+        높음  등록 즉시 하드필터에 들어간다
+      좌표 + 반경으로만 다룬다. EDGE_ID 를 저장하면 재적재 후 엉뚱한 엣지를 막게 된다.
+    -->
+    <div style="font-weight:bold; margin-bottom:4px">제보</div>
+    <label class="legend"><input type="checkbox" id="t-report" checked>
+        <i style="background:#d32f2f"></i><i style="background:#f9a825"></i><i style="background:#2e7d32"></i>
+        제보 <span id="c-report"></span></label>
+    <div class="hint" style="margin-left:22px; color:#888; font-size:11px">
+        빨강=통행 불가(높음) · 노랑=고려(보통) · 초록=통행 가능(낮음).<br>
+        흐린 것은 반려·해소돼 차단에서 빠진 제보다.</div>
+
+    <!--
+      로그인 상태를 먼저 보여준다. OBSTACLE_REPORTS.USERNAME 이 USERS 로 FK NOT NULL 이라
+      비로그인이면 등록이 반드시 거절되는데, 눌러보기 전까지 알 수 없으면
+      '저장했는데 아무 일도 안 일어난다'로 보인다.
+    -->
+    <div id="r-login" style="font-size:12px; margin:4px 0 6px; padding:5px 7px; border-radius:5px"></div>
+
+    <label class="legend" style="margin-top:4px">
+        <input type="checkbox" id="r-add"> <b>제보 등록</b> — 지도를 클릭해 위치를 찍기</label>
+    <div class="sub" id="r-hint" style="color:#666; font-size:12px">
+        켜면 지도 클릭이 공사 점 대신 제보 위치를 찍습니다.</div>
+    <div id="rp-list"></div>
+
+    <hr>
+    <div id="meta" style="color:#666; font-size:12px"></div>
+</div>
+
+<div id="editor">
+    <!-- 공사와 제보 중 한 번에 하나만 연다. 둘 다 지도 클릭을 쓰기 때문에 겹치면 서로를 덮어쓴다. -->
+    <h2 id="ed-title">선택한 공사</h2>
+
+    <div id="ed-detail" style="display:none">
+        <div class="name" id="ed-name">-</div>
+        <div class="sub" id="ed-sub">-</div>
+        <div id="ed-twin" style="display:none; background:#fff3e0; color:#e65100;
+             padding:6px 8px; border-radius:5px; font-size:12px; margin-bottom:8px">
+            <div id="ed-twin-text"></div>
+            <label style="display:block; margin-top:4px; font-weight:bold">
+                <input type="checkbox" id="ed-twin-apply" checked> 함께 수정</label>
+        </div>
+
+        <div class="row"><span>차단 반경</span><span id="ed-radius-label">-</span></div>
+        <input type="range" id="ed-radius" min="4" max="50" step="1">
+        <label style="font-size:12px; color:#555">
+            <input type="checkbox" id="ed-default"> 전역 설정값 사용 (<span id="ed-default-m">-</span>)</label>
+
+        <div class="row" style="margin-top:6px"><span>막히는 보도</span><span id="ed-count">-</span></div>
+        <div class="sub" id="ed-hint">지도를 클릭하면 위치를 옮깁니다.</div>
+
+        <div class="btns">
+            <button class="primary" id="ed-save">저장</button>
+            <button id="ed-cancel">취소</button>
+        </div>
+
+        <!--
+          기준선 - 표시 전용이다. 차단에는 전혀 영향이 없고, '실제 공사는 여기'를
+          사람이 적어두는 메모다. 그래서 저장 버튼도 위(좌표·반경)와 따로 둔다.
+        -->
+        <div id="ed-note" style="margin-top:12px; border-top:1px solid #e3e3e3; padding-top:8px">
+            <div class="row"><span><b>기준선</b> (표시 전용)</span><span id="ed-note-state">없음</span></div>
+            <label style="font-size:12px; color:#555">
+                <input type="checkbox" id="ed-note-edit"> 지도 클릭으로 <b>끝점 옮기기</b></label>
+            <div class="sub" id="ed-note-hint" style="margin-top:4px">
+                켜면 지도 클릭이 공사 점 대신 기준선의 가까운 끝점을 옮깁니다.
+            </div>
+            <div class="btns">
+                <button id="ed-note-init">현재 구간에서</button>
+                <button class="primary" id="ed-note-save">선 저장</button>
+                <button id="ed-note-clear">지우기</button>
+            </div>
+        </div>
+    </div>
+
+    <!--
+      제보 상세. 새로 등록할 때와 기존 것을 고쳤을 때가 같은 폼이다 -
+      보는 항목이 똑같아서 나누면 코드만 두 벌이 된다. 버튼 줄만 바뀐다.
+    -->
+    <div id="rp-detail" style="display:none">
+        <div class="name" id="rp-name">새 제보</div>
+        <div class="sub" id="rp-sub">지도를 클릭해 위치를 찍으세요.</div>
+
+        <div style="font-size:12px; color:#555">정도</div>
+        <div class="rp-sev">
+            <label class="low"><input type="radio" name="rsev" value="낮음">통행 가능<br>낮음</label>
+            <label class="mid"><input type="radio" name="rsev" value="보통">고려<br>보통</label>
+            <label class="high"><input type="radio" name="rsev" value="높음" checked>통행 불가<br>높음</label>
+        </div>
+        <div class="sub" id="rp-sev-hint" style="margin-top:-4px">
+            등록 즉시 차단됩니다. 관리자가 확정/반려합니다.</div>
+
+        <div style="font-size:12px; color:#555">유형</div>
+        <select id="rp-type">
+            <option>턱</option>
+            <option>계단</option>
+            <option>적치물</option>
+            <option>기타</option>
+        </select>
+
+        <div style="font-size:12px; color:#555; margin-top:6px">설명 (선택, 500자)</div>
+        <textarea id="rp-desc" placeholder="예) 보도 위에 공사 자재가 쌓여 있어 지나갈 수 없습니다."></textarea>
+
+        <div class="row" style="margin-top:8px"><span>차단 반경</span><span id="rp-radius-label">-</span></div>
+        <input type="range" id="rp-radius" min="1" max="30" step="1" value="5">
+        <!-- 사용자 화면은 미터를 묻지 않고 이 셋 중 하나를 보낸다. 여기서 같은 값을 눌러볼 수 있게 둔다. -->
+        <div class="rp-preset">
+            <button type="button" data-m="5">여기 한 곳 5m</button>
+            <button type="button" data-m="15">이 구간 15m</button>
+            <button type="button" data-m="30">넓게 30m</button>
+        </div>
+        <label style="font-size:12px; color:#555">
+            <input type="checkbox" id="rp-default"> 전역 설정값 사용 (<span id="rp-default-m">-</span>)</label>
+
+        <div class="row" style="margin-top:6px"><span>막히는 보도</span><span id="rp-count">-</span></div>
+        <div class="sub" id="rp-hint">지도를 클릭하면 위치가 정해집니다.</div>
+
+        <div class="btns">
+            <button class="primary" id="rp-save">등록</button>
+            <button id="rp-cancel">취소</button>
+        </div>
+        <!--
+          결과를 버튼 바로 아래에 둔다. 왼쪽 패널 맨 위의 #status 에만 띄웠더니
+          누르는 곳(오른쪽)과 결과가 뜨는 곳(왼쪽 끝)이 멀어서, 실패해도
+          아무 일 없는 것처럼 보였다. 양쪽에 같이 띄운다.
+        -->
+        <div id="rp-msg" style="display:none; margin-top:6px; padding:5px 7px;
+             border-radius:5px; font-size:12px"></div>
+
+        <!-- 확정/반려는 기존 제보에만 뜬다. 새 제보에는 바꿀 상태가 없다. -->
+        <div id="rp-status-box" style="display:none; margin-top:12px;
+             border-top:1px solid #e3e3e3; padding-top:8px">
+            <div class="row"><span><b>상태</b></span><span id="rp-status">-</span></div>
+            <div class="sub" style="margin-top:2px">
+                반려하면 차단에서 즉시 빠집니다. 해소는 장애물이 없어졌다는 뜻입니다.</div>
+            <div class="btns">
+                <button class="primary" data-st="공개">확정</button>
+                <button class="danger" data-st="반려">반려</button>
+                <button data-st="해소">해소</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ed-list"></div>
+</div>
+
+<div id="map"></div>
+<!-- 지도 위에 겹쳐 둔다. 스크린샷을 찍으면 좌표가 같이 찍혀서, 그림만 보고도 환산이 된다. -->
+<div id="geo"></div>
+
+<script>
+    // wheelway.region-id 와 맞춰야 한다. chungbuk-boeun → [36.4894, 127.7295] (보은읍 중심가)
+    /*
+      지도를 처음 띄울 자리.
+
+      ★ 좌표를 박아두지 않는다. region-id 를 보은으로 바꾸면 서버가 주는 bounds 도 같이
+      바뀌는데, 중심만 시청에 남아 있으면 열자마자 <b>데이터가 없는 곳</b>이 뜬다.
+      사용자 화면(map.js)에서 먼저 겪었고, 이 화면들도 같은 상태로 남아 있었다.
+
+      아래 값은 bounds 를 못 받았을 때만 쓰는 마지막 수단이다.
+    */
+    const CENTER_FALLBACK = [37.5663, 126.9779];   // 서울시청
+    let serviceBounds = null;                      // /api/config 가 준다
+
+    function initialCenter() {
+        if (!serviceBounds) {
+            return CENTER_FALLBACK;
+        }
+        const [minLat, minLng, maxLat, maxLng] = serviceBounds;
+        return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+    }
+
+    let map;
+    const overlays = { construction: [], constructionLine: [], noteLine: [] };
+
+    let zoneData = [];        // /api/overlay/construction 응답 원본
+    let defaultRadiusM = 5;   // 서버의 전역 설정값
+    let editing = null;       // 수정 중인 공사
+    let editPos = null;       // 옮긴 위치 (아직 저장 전)
+    let editRadius = null;    // 지정한 반경. null 이면 전역값 사용
+    let editPreview = [];     // 미리보기 선
+    let editCircle = null;    // 반경 원
+    let editTwins = [];       // 고른 공사와 사실상 같은 자리에 있는 다른 공사들
+
+    /**
+     * 수정 중인 공사의 기준선. [[위도,경도],[위도,경도]] 또는 null.
+     *
+     * 표시 전용이다 - 차단에는 전혀 들어가지 않는다. 지오코딩 좌표가 필지 중심이라
+     * 실제 공사 위치와 다른데 '어느 쪽 보도인지'를 데이터로 알 수 없어서,
+     * 사람이 지도를 보고 적어두는 메모다.
+     */
+    let editNote = null;
+    let noteOverlays = [];    // 지금 그려져 있는 기준선(선 + 끝점 손잡이)
+
+    /**
+     * 같은 자리로 볼 거리(m). 지오코딩이 같은 지번을 주면 좌표가 소수점까지 똑같이 나오지만,
+     * 지번이 조금 달라 몇 m 어긋나는 경우도 같은 공사 지점으로 보는 게 맞다.
+     */
+    const TWIN_RADIUS_M = 5;
+
+    /** 클릭으로 공사를 고를 수 있는 거리. */
+    const PICK_RADIUS_M = 60;
+
+    // ── 제보 ────────────────────────────────────────────────────────────
+    // 공사와 나란히 두지 않고 따로 모아둔 이유: 공사는 '고쳐야 할 기존 데이터'고
+    // 제보는 '새로 만들어지는 데이터'라, 상태 개수도 흐름도 다르다.
+    let reportData = [];        // /api/report 응답 원본
+    let reportOverlays = [];    // 지도에 찍힌 제보 점 { id, dot, el }
+    let reportLines = [];       // 제보가 막는 구간 선 { id, line }
+    let rpEditing = null;       // 고른 제보. null 이면서 rpNew 면 '새 제보'
+    let rpNew = false;          // 등록 모드로 들어와 아직 저장 전인가
+    let rpPos = null;           // 찍은 위치
+    let rpRadius = null;        // 지정한 반경. null 이면 전역값
+    let rpPreview = [];         // 미리보기 선
+    let rpCircle = null;        // 반경 원
+    let rpMarker = null;        // 지금 찍은 자리. 반경 원만으로는 안 보인다(5m = 1~2px)
+
+    /** 클릭으로 제보를 고를 수 있는 거리. 공사(60m)보다 좁다 - 제보 좌표가 더 정확하기 때문이다. */
+    const RPICK_RADIUS_M = 30;
+
+    /** 차단에 관여하는 상태. 이 둘이 아니면(반려·해소) 지도에서 흐리게 그린다. */
+    const LIVE_STATUS = ['대기', '공개'];
+
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(text, cls) {
+        const el = $('status');
+        el.textContent = text;
+        el.className = cls;
+    }
+
+    async function boot() {
+        const cfg = await fetch('/api/config').then(r => r.json());
+
+        if (!cfg.kakaoJsKey) {
+            setStatus('카카오 JavaScript 키가 없습니다. credentials/api_keys.properties 의 kakao.js-key 를 채우세요.', 'fail');
+            return;
+        }
+
+        // ★ 지도를 만들기 전에 받아둬야 한다. initMap 은 SDK onload 뒤라 늘 이보다 늦다.
+        serviceBounds = cfg.bounds;
+        defaultRadiusM = cfg.defaultRadiusM;
+        $('ed-default-m').textContent = `${defaultRadiusM}m`;
+        $('rp-default-m').textContent = `${defaultRadiusM}m`;
+        showMeta(cfg);
+
+        const s = document.createElement('script');
+        s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${cfg.kakaoJsKey}&autoload=false`;
+        s.onerror = () => setStatus('지도 SDK 를 불러오지 못했습니다. 키와 플랫폼 도메인 설정을 확인하세요.', 'fail');
+        s.onload = () => kakao.maps.load(initMap);
+        document.head.appendChild(s);
+    }
+
+    async function initMap() {
+        map = new kakao.maps.Map($('map'), {
+            center: new kakao.maps.LatLng(...initialCenter()),
+            level: 5
+        });
+
+        kakao.maps.event.addListener(map, 'click', (e) => onMapClick(e.latLng));
+        kakao.maps.event.addListener(map, 'idle', refreshGraph);
+        kakao.maps.event.addListener(map, 'idle', showGeo);
+        showGeo();
+
+        await loadConstruction();
+        buildEditList();
+        await loadManualList();
+        await loadReports();
+        setStatus('고칠 공사를 고르거나, [제보 등록] 을 켜고 지도를 클릭하세요.', 'wait');
+    }
+
+    /*
+     * 왜 점을 클릭 가능한 오버레이로 만들지 않았나:
+     * 클릭을 받는 오버레이는 그 클릭을 지도로 넘기지 않는다. 그러면 '점을 고르는 클릭'과
+     * '위치를 옮기는 클릭'이 서로를 막는다. 그래서 둘 다 지도 클릭 하나로 처리한다.
+     *   고른 공사가 없으면 → 가장 가까운 공사를 고른다
+     *   고른 공사가 있으면 → 그 자리로 옮긴다
+     */
+    function onMapClick(latLng) {
+        // 엣지 수정 모드가 켜져 있으면 그쪽이 먼저다. 공사 점 선택·이동과 겹치면 서로를 덮어쓴다.
+        if (eMode()) {
+            onEdgeClick(latLng);
+            return;
+        }
+
+        // 제보를 찍고 있거나 고른 상태면 그쪽이 다음이다. 공사보다 앞에 두는 이유는
+        // 제보 작업이 '지금 켜둔 모드'라서다 - 모드가 켜진 채로 공사가 잡히면 헷갈린다.
+        if (rpNew || rpEditing) {
+            rpPos = latLng;
+            refreshReportPreview();
+            return;
+        }
+
+        if (!editing) {
+            // 제보를 먼저 본다. 제보 좌표가 공사보다 정확해서 판정 거리를 좁게 잡았고(30m),
+            // 좁은 쪽을 먼저 봐야 '제보를 고르려 했는데 공사가 잡히는' 일이 없다.
+            const r = nearestReport(latLng.getLat(), latLng.getLng(), RPICK_RADIUS_M);
+            if (r) {
+                selectReport(r);
+                return;
+            }
+            const z = nearestZone(latLng.getLat(), latLng.getLng(), PICK_RADIUS_M);
+            if (!z) {
+                setStatus(`${PICK_RADIUS_M}m 안에 공사가 없습니다. 주황 점 근처를 클릭하세요.`, 'fail');
+                return;
+            }
+            selectZone(z);
+            return;
+        }
+
+        // 기준선 편집 중이면 공사 점 대신 선의 끝점을 옮긴다.
+        // 클릭 하나로 둘 다 하려면 모드가 필요하다 - 안 그러면 서로를 덮어쓴다.
+        if ($('ed-note-edit').checked) {
+            moveNoteEnd(latLng);
+            return;
+        }
+
+        editPos = latLng;
+        refreshPreview();
+    }
+
+    /**
+     * 클릭 지점에서 <b>가까운 쪽 끝점</b>을 그 자리로 옮긴다.
+     *
+     * 드래그가 아니라 클릭으로 만든 이유: 손잡이가 클릭을 받으려면 clickable 오버레이여야 하는데,
+     * 그러면 그 클릭이 지도로 넘어가지 않아 '옮기는 클릭'이 막힌다. 공사 마커에서 이미 겪은 문제다.
+     */
+    function moveNoteEnd(latLng) {
+        if (!editNote) {
+            initNoteLine();
+            if (!editNote) {
+                return;
+            }
+        }
+        const lat = latLng.getLat(), lng = latLng.getLng();
+        const d0 = distanceM(lat, lng, editNote[0][0], editNote[0][1]);
+        const d1 = distanceM(lat, lng, editNote[1][0], editNote[1][1]);
+        editNote[d0 <= d1 ? 0 : 1] = [lat, lng];
+
+        drawEditNote();
+        setStatus('기준선 끝점을 옮겼습니다. 저장하려면 [선 저장].', 'wait');
+    }
+
+    /**
+     * 기준선 초깃값. <b>추정하지 않는다</b> - 지금 실제로 막고 있는 구간의 좌표를 그대로 쓴다.
+     * 예전에 도로 폭을 등급으로 추정해 선을 놓았다가 0.5~30.5m 씩 어긋나 폐기한 적이 있다.
+     * 막는 구간이 없으면 공사 점을 지나는 짧은 동서 선을 놓고 사람이 끌어다 맞춘다.
+     */
+    function initNoteLine() {
+        const segs = (editing.segments || []);
+        if (segs.length) {
+            const s = segs[0];
+            editNote = [[s[0][0], s[0][1]], [s[s.length - 1][0], s[s.length - 1][1]]];
+        } else {
+            const lat = editPos.getLat(), lng = editPos.getLng();
+            const d = 10 / (111320 * Math.cos(lat * Math.PI / 180));   // 좌우 10m
+            editNote = [[lat, lng - d], [lat, lng + d]];
+        }
+        drawEditNote();
+    }
+
+    function drawEditNote() {
+        clearEditNote();
+        $('ed-note-state').textContent = editNote ? '있음' : '없음';
+        if (!editNote) {
+            return;
+        }
+
+        const on = $('ed-note-edit').checked;
+        noteOverlays.push(makeNoteLine(editNote, on));
+
+        editNote.forEach((p, i) => {
+            const el = document.createElement('div');
+            el.className = 'nend' + (on ? ' on' : '');
+            el.textContent = i === 0 ? 'A' : 'B';
+            noteOverlays.push(new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(p[0], p[1]),
+                content: el, zIndex: 6, map: map
+            }));
+        });
+    }
+
+    function clearEditNote() {
+        noteOverlays.forEach(o => o.setMap(null));
+        noteOverlays = [];
+    }
+
+    function makeNoteLine(coords, active) {
+        const line = new kakao.maps.Polyline({
+            path: coords.map(c => new kakao.maps.LatLng(c[0], c[1])),
+            strokeWeight: 5, strokeColor: active ? '#d81b60' : '#111',
+            strokeOpacity: 0.95, strokeStyle: 'solid', zIndex: 5
+        });
+        line.setMap(map);
+        return line;
+    }
+
+    async function saveNoteLine(clear) {
+        if (!editing) {
+            return;
+        }
+        if (!clear && !editNote) {
+            setStatus('그릴 기준선이 없습니다. [현재 구간에서] 를 먼저 누르세요.', 'fail');
+            return;
+        }
+
+        const q = clear ? '' : 'line=' + encodeURIComponent(JSON.stringify(editNote));
+        const res = await fetch(`/api/construction/${editing.id}/note-line?${q}`, { method: 'PUT' })
+            .then(r => r.json());
+
+        if (!res.ok) {
+            setStatus(res.message, 'fail');
+            return;
+        }
+
+        if (clear) {
+            editNote = null;
+            drawEditNote();
+        }
+        editing.noteLineJson = clear ? null : JSON.stringify(editNote);
+        setStatus(clear ? '기준선을 지웠습니다.' : '기준선을 저장했습니다. 차단은 그대로입니다.', 'ok');
+        applyConstructionOverlays();
+    }
+
+    function nearestZone(lat, lng, maxM) {
+        let best = null, bestM = maxM;
+        zoneData.forEach(z => {
+            const d = distanceM(lat, lng, z.latitude, z.longitude);
+            if (d <= bestM) { bestM = d; best = z; }
+        });
+        return best;
+    }
+
+    /** 화면 표시용 근사 거리(m). 정밀한 판정은 서버가 하므로 이 정도면 충분하다. */
+    function distanceM(lat1, lng1, lat2, lng2) {
+        const mPerDegLat = 111320;
+        const mPerDegLng = mPerDegLat * Math.cos(lat1 * Math.PI / 180);
+        const dy = (lat2 - lat1) * mPerDegLat;
+        const dx = (lng2 - lng1) * mPerDegLng;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function selectZone(z) {
+        closeReport();          // 오른쪽 상자는 하나다. 제보를 열어둔 채 공사를 열면 둘이 겹친다
+        editing = z;
+        editPos = new kakao.maps.LatLng(z.latitude, z.longitude);
+        editRadius = z.blockRadiusM;
+
+        $('ed-detail').style.display = 'block';
+        $('ed-name').textContent = z.name;
+        $('ed-sub').textContent = `${z.roadSegment} · ${z.startDate} ~ ${z.endDate ?? '(미정)'}`;
+        $('ed-default').checked = (editRadius === null);
+        $('ed-radius').value = editRadius ?? defaultRadiusM;
+
+        // 같은 자리에 다른 공사가 있으면 함께 고칠 수 있게 한다. 따로 고치면 하나만 줄어들고
+        // 나머지가 그대로 남아 "왜 안 줄어들지?" 가 된다 (무교동사거리에 실제로 2건이 겹쳐 있다).
+        editTwins = zoneData.filter(o => o.id !== z.id
+            && distanceM(z.latitude, z.longitude, o.latitude, o.longitude) <= TWIN_RADIUS_M);
+
+        $('ed-twin').style.display = editTwins.length ? 'block' : 'none';
+        if (editTwins.length) {
+            $('ed-twin-text').innerHTML = `⚠ 같은 자리(${TWIN_RADIUS_M}m 이내)에 공사 `
+                + `<b>${editTwins.length}건</b>이 더 있습니다.<br>`
+                + editTwins.map(t => '· ' + escapeHtml(t.name.slice(0, 26))).join('<br>');
+        }
+
+        // 저장돼 있던 기준선을 불러온다. 깨진 값이 있어도 화면 전체가 죽지 않게 감싼다.
+        editNote = null;
+        $('ed-note-edit').checked = false;
+        try {
+            editNote = z.noteLineJson ? JSON.parse(z.noteLineJson) : null;
+        } catch (e) {
+            console.warn('기준선 JSON 을 읽지 못했습니다', z.id, e);
+        }
+        drawEditNote();
+
+        applyConstructionOverlays();   // 고치는 공사들의 선만 남기고, 그 점은 흐리게 한다
+        setStatus('지도를 클릭해 실제 보도 위치로 옮기세요.', 'wait');
+        map.setCenter(editPos);
+        if (map.getLevel() > 3) map.setLevel(3);
+        refreshPreview();
+    }
+
+    async function refreshPreview() {
+        if (!editing) return;
+
+        const useDefault = $('ed-default').checked;
+        editRadius = useDefault ? null : Number($('ed-radius').value);
+        const radius = editRadius ?? defaultRadiusM;
+
+        $('ed-radius').disabled = useDefault;
+        $('ed-radius-label').textContent = useDefault ? `${radius}m (전역)` : `${radius}m`;
+
+        clearPreview();
+
+        const url = `/api/construction/preview?lat=${editPos.getLat()}&lng=${editPos.getLng()}`
+            + (editRadius === null ? '' : `&radiusM=${editRadius}`);
+        const res = await fetch(url).then(r => r.json());
+
+        res.segments.forEach(s => {
+            const line = makeLine(s, '#d81b60', 8);
+            line.setMap(map);
+            editPreview.push(line);
+        });
+
+        editCircle = new kakao.maps.Circle({
+            center: editPos, radius: radius,
+            strokeWeight: 2, strokeColor: '#d81b60', strokeOpacity: 0.9, strokeStyle: 'dashed',
+            fillColor: '#d81b60', fillOpacity: 0.12, map: map
+        });
+
+        $('ed-count').textContent = `${res.segmentCount} 개`;
+        if (res.segmentCount === 0) {
+            $('ed-hint').textContent = '주변에 보도가 전혀 없습니다. 좌표가 크게 어긋났는지 확인하세요.';
+        } else if (res.fallback) {
+            // 반경 밖이지만 가장 가까운 구간을 막은 경우. 서버 동작과 같은 규칙이다.
+            $('ed-hint').textContent = '반경 안에 보도가 없어 가장 가까운 구간을 막습니다. '
+                + '위치를 보도 위로 옮기면 정확해집니다.';
+        } else {
+            $('ed-hint').textContent = '분홍색이 저장 후 막힐 구간입니다.';
+        }
+    }
+
+    function clearPreview() {
+        editPreview.forEach(o => o.setMap(null));
+        editPreview = [];
+        if (editCircle) { editCircle.setMap(null); editCircle = null; }
+    }
+
+    async function saveZone() {
+        if (!editing) return;
+
+        // 함께 수정이 켜져 있으면 같은 자리 공사에도 같은 좌표·반경을 적용한다.
+        // 사실상 한 지점이므로 따로 두면 하나만 줄어들고 나머지가 그대로 막는다.
+        const targets = [...editingIds()];
+        const q = `lat=${editPos.getLat()}&lng=${editPos.getLng()}`
+            + (editRadius === null ? '' : `&radiusM=${editRadius}`);
+
+        let before = null, after = null;
+        for (const id of targets) {
+            const res = await fetch(`/api/construction/${id}?${q}`, { method: 'PUT' }).then(r => r.json());
+            if (!res.ok) {
+                setStatus(res.message, 'fail');
+                return;
+            }
+            if (before === null) before = res.blockedBefore;
+            after = res.blockedAfter;
+        }
+
+        setStatus(`${targets.length}건 저장했습니다. 차단 엣지 ${before} → ${after}`, 'ok');
+
+        closeEditor();
+        await loadConstruction();
+        buildEditList();
+        showMeta(await fetch('/api/config').then(r => r.json()));
+    }
+
+    function closeEditor() {
+        clearPreview();
+        clearEditNote();
+        editing = editPos = editRadius = null;
+        editNote = null;
+        editTwins = [];
+        $('ed-note-edit').checked = false;
+        $('ed-detail').style.display = 'none';
+        applyConstructionOverlays();   // 가렸던 선과 흐려둔 점을 되돌린다
+    }
+
+    // ------------------------------------------------------------ 제보
+
+    /**
+     * 제보를 지도에 찍는다. 공사와 달리 <b>선은 정도에 따라서만</b> 그린다 -
+     * 낮음은 아무것도 안 막으므로 그릴 구간이라는 개념 자체가 없고, 그리면 막히는 것처럼 보인다.
+     */
+    async function loadReports() {
+        reportOverlays.forEach(o => o.dot.setMap(null));
+        reportLines.forEach(o => o.line.setMap(null));
+        reportOverlays = [];
+        reportLines = [];
+
+        reportData = await fetch('/api/report').then(r => r.json());
+
+        reportData.forEach(r => {
+            const live = LIVE_STATUS.includes(r.status);
+
+            (r.segments || []).forEach(s => {
+                reportLines.push({ id: r.id, line: makeLine(s, sevColor(r.severity), 6) });
+            });
+
+            const el = document.createElement('div');
+            el.className = 'rep ' + sevClass(r.severity) + (live ? '' : ' off');
+            el.title = `#${r.id} ${r.severity} · ${r.obstacleType}\n`
+                + `${r.status} · ${r.username} · ${r.reportedAt}\n`
+                + `반경 ${r.blockRadiusM ?? defaultRadiusM}m\n`
+                + (r.description || '');
+
+            const dot = new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(r.latitude, r.longitude),
+                content: el, zIndex: 4, map: map
+            });
+            reportOverlays.push({ id: r.id, dot, el });
+        });
+
+        const high = reportData.filter(r => r.severity === '높음' && LIVE_STATUS.includes(r.status)).length;
+        $('c-report').textContent = `(${reportData.length}건 · 차단 ${high})`;
+        applyReportOverlays();
+        buildReportList();
+    }
+
+    const sevColor = (s) => s === '높음' ? '#d32f2f' : s === '보통' ? '#f9a825' : '#2e7d32';
+    const sevClass = (s) => s === '높음' ? 'high' : s === '보통' ? 'mid' : 'low';
+
+    /** 로그인한 아이디. 빈 문자열이면 비로그인이라 제보 등록이 반드시 거절된다. */
+    let loginId = '';
+
+    function showLogin(id) {
+        loginId = id || '';
+        const box = $('r-login');
+        if (loginId) {
+            box.style.cssText += ';background:#e8f5e9;color:#1b5e20';
+            box.textContent = `${loginId} 으로 로그인됨 — 제보를 등록할 수 있습니다.`;
+        } else {
+            box.style.cssText += ';background:#ffebee;color:#b71c1c';
+            box.innerHTML = '<b>로그인하지 않았습니다.</b> 제보 등록·확정·반려가 모두 거절됩니다.<br>'
+                + '<a href="/user/login" target="_blank" style="color:#b71c1c">로그인하러 가기 ↗</a>'
+                + ' — 로그인한 뒤 이 화면을 새로고침하세요.';
+        }
+    }
+
+    /** 제보 폼 결과. 왼쪽 상태줄과 <b>버튼 바로 아래</b> 양쪽에 띄운다. */
+    function setReportMsg(text, ok) {
+        setStatus(text, ok ? 'ok' : 'fail');
+        const box = $('rp-msg');
+        box.style.display = 'block';
+        box.style.background = ok ? '#e8f5e9' : '#ffebee';
+        box.style.color = ok ? '#1b5e20' : '#b71c1c';
+        box.textContent = text;
+
+        // 로그인이 없어서 막힌 것이면 갈 곳을 같이 준다. 메시지만으로는 어디서 하는지 모른다.
+        if (!ok && text.includes('로그인')) {
+            box.innerHTML += ' <a href="/user/login" target="_blank" style="color:#b71c1c">로그인 ↗</a>';
+        }
+    }
+
+    /** 수정 중인 제보의 점은 흐리게, 그 선은 숨긴다. 공사에서와 같은 이유다(미리보기와 두 겹이 된다). */
+    function applyReportOverlays() {
+        const on = $('t-report').checked;
+        const id = rpEditing ? rpEditing.id : null;
+
+        reportOverlays.forEach(o => {
+            o.dot.setMap(on ? map : null);
+            o.el.classList.toggle('was', o.id === id);
+        });
+        reportLines.forEach(o => o.line.setMap(on && o.id !== id ? map : null));
+    }
+
+    function nearestReport(lat, lng, maxM) {
+        let best = null, bestM = maxM;
+        reportData.forEach(r => {
+            const d = distanceM(lat, lng, r.latitude, r.longitude);
+            if (d <= bestM) { bestM = d; best = r; }
+        });
+        return best;
+    }
+
+    /** 등록 모드로 들어간다. 위치는 아직 없다 - 지도를 클릭해야 정해진다. */
+    function startNewReport() {
+        closeEditor();          // 공사 상자와 겹치지 않게
+        rpEditing = null;
+        rpNew = true;
+        rpPos = null;
+        rpRadius = null;
+
+        $('ed-title').textContent = '새 제보';
+        $('rp-name').textContent = '새 제보';
+        $('rp-sub').textContent = '지도를 클릭해 위치를 찍으세요.';
+        $('rp-desc').value = '';
+        $('rp-type').value = '턱';
+        document.querySelector('input[name="rsev"][value="높음"]').checked = true;
+        $('rp-default').checked = false;
+        $('rp-radius').value = defaultRadiusM;
+        $('rp-save').textContent = '등록';
+        $('rp-status-box').style.display = 'none';
+        $('rp-count').textContent = '-';
+        $('rp-hint').textContent = '지도를 클릭하면 위치가 정해집니다.';
+        $('rp-msg').style.display = 'none';       // 지난 결과가 남아 있으면 새 결과로 오해한다
+
+        $('rp-detail').style.display = 'block';
+        $('ed-detail').style.display = 'none';
+        updateSevHint();
+        applyReportOverlays();
+        setStatus('제보할 자리를 지도에서 클릭하세요.', 'wait');
+    }
+
+    function selectReport(r) {
+        closeEditor();
+        $('r-add').checked = false;     // 등록 모드였다면 끈다. 둘 다 켜지면 클릭이 어디로 갈지 모른다
+        rpEditing = r;
+        rpNew = false;
+        rpPos = new kakao.maps.LatLng(r.latitude, r.longitude);
+        rpRadius = r.blockRadiusM;
+
+        $('ed-title').textContent = '선택한 제보';
+        $('rp-name').textContent = `#${r.id} ${r.severity} · ${r.obstacleType}`;
+        $('rp-sub').textContent = `${r.username} · ${r.reportedAt}`
+            + (r.verifiedBy ? ` · ${r.verifiedBy} 가 ${r.verifiedAt} 처리` : '');
+        $('rp-desc').value = r.description || '';
+        $('rp-type').value = r.obstacleType;
+        const sev = document.querySelector(`input[name="rsev"][value="${r.severity}"]`);
+        if (sev) sev.checked = true;
+        $('rp-default').checked = (rpRadius === null);
+        $('rp-radius').value = rpRadius ?? defaultRadiusM;
+        $('rp-save').textContent = '위치·반경 저장';
+        $('rp-status-box').style.display = 'block';
+        $('rp-status').textContent = r.status;
+        $('rp-msg').style.display = 'none';
+
+        $('rp-detail').style.display = 'block';
+        $('ed-detail').style.display = 'none';
+        updateSevHint();
+        applyReportOverlays();
+        map.setCenter(rpPos);
+        if (map.getLevel() > 3) map.setLevel(3);
+        refreshReportPreview();
+        setStatus('지도를 클릭하면 위치를 옮깁니다. 정도·유형은 저장되지 않습니다.', 'wait');
+    }
+
+    function closeReport() {
+        clearReportPreview();
+        rpEditing = null;
+        rpNew = false;
+        rpPos = null;
+        rpRadius = null;
+        $('r-add').checked = false;
+        $('rp-detail').style.display = 'none';
+        $('ed-title').textContent = '선택한 공사';
+        applyReportOverlays();
+    }
+
+    /**
+     * 찍은 자리에서 무엇이 막히는지 미리 본다. <b>{@code /api/construction/preview} 를 그대로 쓴다</b> -
+     * 이름만 공사용이고 안에서 도는 것은 서버의 매칭 규칙 그 자체라 차단 사유를 가리지 않는다.
+     * 제보용으로 한 벌 더 만들면 두 화면이 서로 다른 답을 내기 시작한다.
+     */
+    async function refreshReportPreview() {
+        // 위치가 아직 없어도 반경 표시는 갱신한다. 지도를 클릭하기 전에 슬라이더부터
+        // 만지면 라벨이 '-' 로 굳어 있어 값이 안 먹는 것처럼 보인다.
+        const useDefault = $('rp-default').checked;
+        rpRadius = useDefault ? null : Number($('rp-radius').value);
+        const radius = rpRadius ?? defaultRadiusM;
+
+        $('rp-radius').disabled = useDefault;
+        $('rp-radius-label').textContent = useDefault ? `${radius}m (전역)` : `${radius}m`;
+
+        if (!rpPos) {
+            return;
+        }
+
+        clearReportPreview();
+
+        const sev = severityValue();
+        const color = sevColor(sev);
+
+        const url = `/api/construction/preview?lat=${rpPos.getLat()}&lng=${rpPos.getLng()}`
+            + (rpRadius === null ? '' : `&radiusM=${rpRadius}`);
+        const res = await fetch(url).then(r => r.json());
+
+        // 낮음은 아무것도 안 막으므로 구간을 그리지 않는다. 원만 남겨 '어디를 가리키는지'는 보이게 한다.
+        if (sev !== '낮음') {
+            res.segments.forEach(s => {
+                const line = makeLine(s, color, 8);
+                line.setMap(map);
+                rpPreview.push(line);
+            });
+        }
+
+        rpCircle = new kakao.maps.Circle({
+            center: rpPos, radius: radius,
+            strokeWeight: 2, strokeColor: color, strokeOpacity: 0.9, strokeStyle: 'dashed',
+            fillColor: color, fillOpacity: 0.12, map: map
+        });
+
+        // 찍은 자리에 마커를 놓는다. 정도에 따라 색이 바뀌어서 무엇을 올리는 중인지도 같이 보인다.
+        // 원 위에 와야 하므로 zIndex 를 미리보기보다 높게 둔다.
+        const pin = document.createElement('div');
+        pin.className = 'rep picking ' + sevClass(sev);
+        pin.title = '여기에 제보합니다. 다시 클릭하면 옮겨집니다.';
+        rpMarker = new kakao.maps.CustomOverlay({
+            position: rpPos, content: pin, zIndex: 8, map: map
+        });
+
+        $('rp-count').textContent = sev === '낮음' ? '해당 없음' : `${res.segmentCount} 개`;
+
+        if (sev === '낮음') {
+            $('rp-hint').textContent = '낮음은 아무 구간도 막지 않습니다. 경로 화면에 참고정보로만 뜹니다.';
+        } else if (res.segmentCount === 0) {
+            $('rp-hint').textContent = '주변에 보도가 전혀 없습니다. 등록해도 아무것도 막히지 않습니다.';
+        } else if (res.fallback) {
+            $('rp-hint').textContent = '반경 안에 보도가 없어 가장 가까운 구간을 막습니다. '
+                + '보도 위로 옮기면 정확해집니다.';
+        } else {
+            $('rp-hint').textContent = sev === '높음'
+                ? '색칠된 구간이 등록 즉시 막힙니다.'
+                : '색칠된 구간이 경로 B 에서 빠집니다. 차단은 아닙니다.';
+        }
+    }
+
+    function clearReportPreview() {
+        rpPreview.forEach(o => o.setMap(null));
+        rpPreview = [];
+        if (rpCircle) { rpCircle.setMap(null); rpCircle = null; }
+        if (rpMarker) { rpMarker.setMap(null); rpMarker = null; }
+    }
+
+    const severityValue = () => document.querySelector('input[name="rsev"]:checked').value;
+
+    /** 정도마다 하는 일이 다르다는 것을 고르는 자리에서 바로 알려준다. */
+    function updateSevHint() {
+        const s = severityValue();
+        $('rp-sev-hint').textContent =
+            s === '높음' ? '등록 즉시 차단됩니다. 관리자가 확정/반려합니다.'
+          : s === '보통' ? '차단하지 않습니다. 경로를 두 개(피한 것/그냥 가는 것) 만들 때 씁니다.'
+                         : '경로 계산에 영향이 없습니다. 참고정보로만 표시됩니다.';
+    }
+
+    /** 새 제보면 등록, 기존 제보면 좌표·반경 저장. 정도·유형·설명은 등록할 때만 저장된다. */
+    async function saveReport() {
+        if (!rpPos) {
+            setStatus('먼저 지도를 클릭해 위치를 찍으세요.', 'fail');
+            return;
+        }
+
+        const q = `lat=${rpPos.getLat()}&lng=${rpPos.getLng()}`
+            + (rpRadius === null ? '' : `&radiusM=${rpRadius}`);
+
+        let res;
+        if (rpNew) {
+            res = await fetch('/api/report?' + q
+                + `&severity=${encodeURIComponent(severityValue())}`
+                + `&type=${encodeURIComponent($('rp-type').value)}`
+                + `&description=${encodeURIComponent($('rp-desc').value)}`,
+                { method: 'POST' }).then(r => r.json());
+        } else {
+            res = await fetch(`/api/report/${rpEditing.id}/location?${q}`,
+                { method: 'PUT' }).then(r => r.json());
+        }
+
+        if (!res.ok) {
+            setReportMsg(res.message, false);
+            return;
+        }
+
+        // 저장은 됐는데 아무것도 안 막는 경우를 알려줘야 한다 - 성공만 띄우면 막힌 줄 알고 넘어간다.
+        const moved = `차단 엣지 ${res.blockedBefore} → ${res.blockedAfter}`;
+        if (rpNew && res.segmentCount === 0 && severityValue() !== '낮음') {
+            setReportMsg(`제보 #${res.id} 등록. 다만 주변에 보도가 없어 막힌 구간이 없습니다.`, false);
+        } else {
+            setReportMsg(rpNew ? `제보 #${res.id} 등록. ${moved}` : `저장했습니다. ${moved}`, true);
+        }
+
+        closeReport();
+        await loadReports();
+        showMeta(await fetch('/api/config').then(r => r.json()));
+    }
+
+    /** 확정(공개) / 반려 / 해소. 어느 쪽이든 서버가 차단 Set 을 다시 계산한다. */
+    async function setReportStatus(status) {
+        if (!rpEditing) {
+            return;
+        }
+        const res = await fetch(`/api/report/${rpEditing.id}/status?status=${encodeURIComponent(status)}`,
+            { method: 'PUT' }).then(r => r.json());
+
+        if (!res.ok) {
+            setReportMsg(res.message, false);
+            return;
+        }
+        setReportMsg(`제보 #${rpEditing.id} → '${status}'. `
+            + `차단 엣지 ${res.blockedBefore} → ${res.blockedAfter}`, true);
+
+        closeReport();
+        await loadReports();
+        showMeta(await fetch('/api/config').then(r => r.json()));
+    }
+
+    /** 차단에 관여하는 것(대기·공개)이 위로 오게 한다. 확정·반려를 기다리는 것이 할 일이라서다. */
+    function buildReportList() {
+        const box = $('rp-list');
+        box.innerHTML = reportData.length ? '' : '<span style="color:#888">제보가 없습니다.</span>';
+
+        [...reportData]
+            .sort((a, b) => (LIVE_STATUS.includes(b.status) ? 1 : 0) - (LIVE_STATUS.includes(a.status) ? 1 : 0))
+            .forEach(r => {
+                const live = LIVE_STATUS.includes(r.status);
+                const row = document.createElement('div');
+                row.className = 'row-r' + (live ? '' : ' dim');
+                row.innerHTML = `<span style="color:${sevColor(r.severity)}">●</span>`
+                    + `<span style="flex:1">#${r.id} ${escapeHtml(r.obstacleType)}`
+                    + ` <span style="color:#888">${escapeHtml(r.status)}</span></span>`
+                    + `<span style="color:#888">${r.blockRadiusM ?? defaultRadiusM}m</span>`;
+                row.title = r.description || '';
+                row.addEventListener('click', () => selectReport(r));
+                box.appendChild(row);
+            });
+    }
+
+    // ------------------------------------------------------------ 오버레이
+
+    /** 공사 오버레이를 처음부터 다시 그린다. 반경이 바뀌면 선도 달라지기 때문이다. */
+    async function loadConstruction() {
+        overlays.construction.forEach(o => o.dot.setMap(null));
+        overlays.constructionLine.forEach(o => o.line.setMap(null));
+        overlays.noteLine.forEach(o => o.line.setMap(null));
+        overlays.construction = [];
+        overlays.constructionLine = [];
+        overlays.noteLine = [];
+
+        const zones = await fetch('/api/overlay/construction').then(r => r.json());
+        zoneData = zones;
+        let lineCount = 0;
+        let noteCount = 0;
+
+        zones.forEach(z => {
+            // 어느 공사의 선인지 같이 들고 있는다. 좌표가 똑같은 공사가 여러 건 있어서
+            // (예: 무교동사거리에 2건) 선만 봐서는 어느 것을 고쳐야 할지 알 수 없다.
+            (z.segments || []).forEach(s => {
+                overlays.constructionLine.push({ zoneId: z.id, line: makeLine(s, '#ff9800', 7) });
+                lineCount++;
+            });
+
+            const until = z.endDate ? `${z.endDate} 까지` : '종료일 미정';
+            const el = document.createElement('div');
+            el.className = 'zone';
+            el.title = `${z.name}\n${until} 통행 불가\n공사구간: ${z.roadSegment}`;
+
+            const dot = new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(z.latitude, z.longitude),
+                content: el, zIndex: 3, map: map
+            });
+            // 선과 마찬가지로 어느 공사의 점인지 들고 있는다. 수정 중인 점만 흐리게 하려면 필요하다.
+            overlays.construction.push({ zoneId: z.id, dot, el });
+
+            // 저장된 기준선. 표시 전용이라 차단·통계와 무관하다.
+            if (z.noteLineJson) {
+                try {
+                    const line = makeLine(JSON.parse(z.noteLineJson), '#111', 5);
+                    overlays.noteLine.push({ zoneId: z.id, line });
+                    noteCount++;
+                } catch (e) {
+                    console.warn('기준선 JSON 을 읽지 못했습니다', z.id, e);
+                }
+            }
+        });
+
+        $('c-construction').textContent = `(${zones.length}건 · 구간 ${lineCount})`;
+        $('c-noteline').textContent = `(${noteCount}건)`;
+        applyConstructionOverlays();
+    }
+
+    /**
+     * 수정 중에는 <b>고른 공사의 선만</b> 남긴다. 좌표가 같은 공사가 여러 건이면
+     * 다른 건의 선이 그대로 남아 "왜 안 줄어들지?" 로 보이기 때문이다.
+     *
+     * <p>고치는 공사의 주황 점은 흐리게 한다. 옮긴 자리에 분홍 원이 따로 생기므로
+     * 그대로 두면 둘 중 어느 것이 지금 값인지 알 수 없다. 지우지 않는 것은
+     * 원래 자리에서 얼마나 옮겼는지가 보여야 하기 때문이다.
+     */
+    function applyConstructionOverlays() {
+        const on = $('t-conline').checked;
+        const ids = editingIds();
+
+        overlays.constructionLine.forEach(o => {
+            const show = on && (ids === null || ids.has(o.zoneId));
+            o.line.setMap(show ? map : null);
+        });
+
+        overlays.construction.forEach(o => {
+            o.el.classList.toggle('was', ids !== null && ids.has(o.zoneId));
+        });
+
+        // 수정 중인 공사의 기준선은 editNote 쪽이 따로 그리므로 여기서는 숨긴다. 안 그러면 두 겹이 된다.
+        const noteOn = $('t-noteline').checked;
+        overlays.noteLine.forEach(o => {
+            const dup = editing && o.zoneId === editing.id;
+            o.line.setMap(noteOn && !dup ? map : null);
+        });
+    }
+
+    /** 지금 고치는 중인 공사 ID 들. 수정 중이 아니면 null(= 전부 표시). */
+    function editingIds() {
+        if (!editing) {
+            return null;
+        }
+        const ids = new Set([editing.id]);
+        if ($('ed-twin-apply').checked) {
+            editTwins.forEach(t => ids.add(t.id));
+        }
+        return ids;
+    }
+
+    /**
+     * 지도 위에 중심 좌표·레벨·축척을 찍는다.
+     * 스크린샷만 받아도 {@code 중심 + (픽셀차 × m/px)} 로 위경도를 되돌릴 수 있게 하려는 것이다.
+     */
+    function showGeo() {
+        const c = map.getCenter();
+        const el = $('map');
+        const w = el.clientWidth, h = el.clientHeight;
+        const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+        const spanM = (ne.getLng() - sw.getLng()) * 111320 * Math.cos(c.getLat() * Math.PI / 180);
+        const mpp = spanM / w;
+
+        $('geo').textContent =
+            `중심 ${c.getLat().toFixed(6)}, ${c.getLng().toFixed(6)}  ·  레벨 ${map.getLevel()}\n`
+            + `화면 ${w}×${h}px  ·  ${mpp.toFixed(3)} m/px  ·  가로 ${Math.round(spanM)} m`;
+    }
+
+    function showMeta(cfg) {
+        showLogin(cfg.loginId);   // 저장 후에도 다시 부르므로 세션이 끊기면 여기서 드러난다
+        $('meta').textContent = `${cfg.regionId} · 엣지 ${cfg.edgeCount.toLocaleString()}`
+            + ` · 차단 ${cfg.blockedCount.toLocaleString()}`;
+        // 지역은 서버가 정한다. 제목에 박아두면 region-id 를 바꿨을 때 거짓말이 된다.
+        document.title = `공사구간 수정 — ${cfg.regionId}`;
+    }
+
+    /** 막는 구간이 적은(=문제 있는) 순으로 목록을 만든다. 0개가 가장 시급하다. */
+    function buildEditList() {
+        const list = $('ed-list');
+        list.innerHTML = '<b style="font-size:12px">막는 구간이 적은 순 (0개가 시급)</b>';
+
+        [...zoneData].sort((a, b) => (a.segments?.length ?? 0) - (b.segments?.length ?? 0))
+            .forEach(z => {
+                const n = z.segments?.length ?? 0;
+                const row = document.createElement('div');
+                if (n === 0) row.className = 'bad';
+                row.textContent = `${String(n).padStart(2)}개 · ${z.name.slice(0, 26)}`;
+                row.title = z.name;
+                row.addEventListener('click', () => selectZone(z));
+                list.appendChild(row);
+            });
+    }
+
+    // ------------------------------------------------------------ 그래프 오버레이
+
+    let graphLines = [], graphDots = [], graphBusy = false, graphPending = false;
+    let graphCache = { nodes: [], walk: [], road: [], blocked: [] };
+
+    /** 스냅 판정은 보도·차도·차단을 가리지 않는다. 색만 갈렸을 뿐 다 같은 엣지다. */
+    const allEdges = () => [...(graphCache.walk || []), ...(graphCache.road || []),
+                            ...(graphCache.blocked || [])];
+
+    /**
+     * 화면 범위의 그래프를 다시 그린다. 전부(엣지 7만+) 그리면 지도가 멈추므로 bbox 로 자른다.
+     * 겹쳐 들어온 호출은 버리지 않고 끝난 뒤 한 번 더 돈다 — 버리면 마지막 범위가 반영되지 않는다.
+     */
+    async function refreshGraph() {
+        if (graphBusy) { graphPending = true; return; }
+        graphBusy = true;
+        try {
+            do { graphPending = false; await drawGraph(); } while (graphPending);
+        } finally { graphBusy = false; }
+    }
+
+    async function drawGraph() {
+        graphLines.forEach(o => o.setMap(null));
+        graphDots.forEach(o => o.setMap(null));
+        graphLines = []; graphDots = [];
+
+        if (!map || !$('t-graph').checked) { $('c-graph').textContent = ''; return; }
+        if (map.getLevel() > 6) { $('c-graph').textContent = '(확대 필요)'; return; }
+
+        const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+        // 사람이 직접 넣은 엣지·노드는 '엣지 직접 수정' 에 들어갔을 때만 받는다.
+        // 평소에도 보이면 원본 데이터와 섞여, 지도에 원래 있는 길처럼 읽힌다.
+        const g = await fetch('/api/overlay/graph'
+            + `?minLat=${sw.getLat()}&minLng=${sw.getLng()}`
+            + `&maxLat=${ne.getLat()}&maxLng=${ne.getLng()}`
+            + (eMode() ? '&manual=true' : '')).then(r => r.json());
+        graphCache = g;
+
+        // 보도는 초록, 차도는 주황. 횡단보도를 어디 찍을지 판단하려면 이 구분이 있어야 한다.
+        g.road.forEach(s => { const l = makeLine(s, '#e8833a', 2); l.setMap(map); graphLines.push(l); });
+        g.walk.forEach(s => { const l = makeLine(s, '#26a69a', 2); l.setMap(map); graphLines.push(l); });
+        g.blocked.forEach(s => { const l = makeLine(s, '#e53935', 3); l.setMap(map); graphLines.push(l); });
+
+        if (map.getLevel() <= 4) {
+            g.nodes.forEach(p => {
+                const c = new kakao.maps.Circle({
+                    center: new kakao.maps.LatLng(p[0], p[1]), radius: 1.2,
+                    strokeWeight: 0, fillColor: '#004d40', fillOpacity: 0.9, zIndex: 2
+                });
+                c.setMap(map); graphDots.push(c);
+            });
+        }
+        $('c-graph').textContent = `(보도 ${g.walkCount} / 차도 ${g.roadCount}`
+            + `${g.truncated ? ' 잘림' : ''})`;
+    }
+
+    // ------------------------------------------------------------ 엣지 직접 수정
+
+    let ePick = [];        // 추가 모드에서 찍은 점들
+    let eTarget = null;    // 삭제 모드에서 고른 엣지 [[위도,경도],[위도,경도]]
+    let eOverlays = [];
+
+    function eMode() {
+        const r = document.querySelector('input[name="emode"]:checked');
+        return r ? r.value : '';
+    }
+
+    /** 엣지 수정 모드일 때의 지도 클릭. 공사 점 이동보다 먼저 처리된다. */
+    function onEdgeClick(latLng) {
+        const lat = latLng.getLat(), lng = latLng.getLng();
+
+        if (eMode() === '추가-고정') {
+            // 스냅하지 않는다. 아직 그려지지 않은 보도를 사람이 직접 놓는 모드다.
+            // 2m 안에 이미 노드가 있으면 서버가 그것을 다시 쓴다(연달아 이을 때 끊기지 않게).
+            const near = nearestGraphNode(lat, lng, 2);
+            const at = near || [lat, lng];
+            ePick.push(at);
+            if (ePick.length > 2) ePick = [at];
+            const how = near ? '2m 안 기존 노드를 다시 씁니다' : '새 노드를 만듭니다';
+            setStatus(ePick.length === 1
+                ? `한쪽 끝을 찍었습니다(${how}). 반대쪽 끝을 클릭하세요.`
+                : `두 점을 찍었습니다(${how}). [저장] 을 누르면 이어집니다.`, 'wait');
+        } else if (eMode() === '추가') {
+            const p = pickPoint(lat, lng);
+            if (!p) { setStatus('가까운 노드도 엣지도 없습니다. 확대해서 선 위나 근처를 클릭하세요.', 'fail'); return; }
+            ePick.push(p.at);
+            if (ePick.length > 2) ePick = [p.at];
+            const how = p.onEdge ? '선 위(노드를 새로 만듭니다)' : '기존 노드';
+            setStatus(ePick.length === 1
+                ? `한쪽 끝을 ${how}에 찍었습니다. 반대쪽 끝을 클릭하세요.`
+                : `두 점을 찍었습니다(${how}). [저장] 을 누르면 이어집니다.`, 'wait');
+        } else {
+            const e = nearestGraphEdge(lat, lng);
+            if (!e) { setStatus('가까운 엣지가 없습니다.', 'fail'); return; }
+            eTarget = e;
+            setStatus('지울 엣지를 골랐습니다. [저장] 을 누르면 그래프에서 빠집니다.', 'wait');
+        }
+        drawEdgePick();
+    }
+
+    /**
+     * 클릭 지점에 붙일 자리를 정한다. 서버의 판정과 같은 순서다.
+     *
+     *   1. 가까운 기존 노드가 있으면 그 노드
+     *   2. 없으면 가장 가까운 엣지 위의 점 — 저장하면 서버가 그 자리에서 엣지를 쪼개 노드를 만든다
+     *
+     * 2번이 있어야 보도 한가운데에 횡단보도를 달 수 있다.
+     * 노드에만 붙일 수 있으면 노드가 없는 구간에는 아무것도 못 잇는다.
+     */
+    /**
+     * {@code maxM} 안의 가장 가까운 기존 노드. 없으면 {@code null}.
+     * '추가(고정)' 에서 <b>연달아 이을 때</b> 앞서 찍은 자리를 다시 잡으려고 쓴다.
+     * 화면 캐시(보이는 범위)만 보므로, 서버가 최종 판정을 다시 한다.
+     */
+    function nearestGraphNode(lat, lng, maxM) {
+        let best = null, bestD = maxM;
+        (graphCache.nodes || []).forEach(p => {
+            const d = distanceM(lat, lng, p[0], p[1]);
+            if (d < bestD) { bestD = d; best = p; }
+        });
+        return best;
+    }
+
+    function pickPoint(lat, lng) {
+        const best = nearestGraphNode(lat, lng, 6);
+        if (best) {
+            return { at: best, onEdge: false };
+        }
+
+        let seg = null, segD = 20;
+        allEdges().forEach(s => {
+            const d = pointToSegM(lat, lng, s[0], s[1]);
+            if (d < segD) { segD = d; seg = s; }
+        });
+        return seg ? { at: projectOnSeg(lat, lng, seg[0], seg[1]), onEdge: true } : null;
+    }
+
+    /** 점을 선분에 정사영. 짧은 구간이라 위경도를 평면으로 근사해도 된다. */
+    function projectOnSeg(lat, lng, a, b) {
+        const kx = Math.cos(lat * Math.PI / 180);
+        const ax = a[1] * kx, ay = a[0], bx = b[1] * kx, by = b[0];
+        const px = lng * kx, py = lat;
+        const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+        const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2));
+        return [ay + t * dy, (ax + t * dx) / kx];
+    }
+
+    function nearestGraphEdge(lat, lng) {
+        let best = null, bestD = 25;
+        allEdges().forEach(s => {
+            const d = pointToSegM(lat, lng, s[0], s[1]);
+            if (d < bestD) { bestD = d; best = s; }
+        });
+        return best;
+    }
+
+    /** 위경도를 m 로 근사해 점-선분 거리. 화면 선택용이라 이 정도 정밀도면 충분하다. */
+    function pointToSegM(lat, lng, a, b) {
+        const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 111320;
+        const px = lng * kx, py = lat * ky;
+        const x1 = a[1] * kx, y1 = a[0] * ky, x2 = b[1] * kx, y2 = b[0] * ky;
+        const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+        const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l2));
+        return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
+    function drawEdgePick() {
+        eOverlays.forEach(o => o.setMap(null));
+        eOverlays = [];
+
+        ePick.forEach((p, i) => {
+            const el = document.createElement('div');
+            el.className = 'nend on';
+            el.textContent = i === 0 ? 'A' : 'B';
+            eOverlays.push(new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(p[0], p[1]), content: el, zIndex: 7, map: map
+            }));
+        });
+        if (ePick.length === 2) {
+            const l = makeLine(ePick, '#1565c0', 6); l.setMap(map); eOverlays.push(l);
+        }
+        if (eTarget) {
+            const l = makeLine(eTarget, '#d81b60', 8); l.setMap(map); eOverlays.push(l);
+        }
+        $('e-apply').disabled = !(eMode().startsWith('추가') ? ePick.length === 2 : eTarget);
+    }
+
+    function clearEdgePick() {
+        ePick = []; eTarget = null;
+        drawEdgePick();
+    }
+
+    async function applyEdgeEdit() {
+        const mode = eMode();
+        let q;
+        if (mode.startsWith('추가')) {
+            if (ePick.length !== 2) return;
+            // '추가' 는 서버가 스냅·정사영하고, '추가-고정' 은 찍은 좌표를 그대로 쓴다.
+            q = `action=${encodeURIComponent(mode)}&fromLat=${ePick[0][0]}&fromLng=${ePick[0][1]}`
+              + `&toLat=${ePick[1][0]}&toLng=${ePick[1][1]}&kind=crossing`;
+        } else if (mode === '삭제') {
+            if (!eTarget) return;
+            q = `action=삭제&fromLat=${eTarget[0][0]}&fromLng=${eTarget[0][1]}`
+              + `&toLat=${eTarget[1][0]}&toLng=${eTarget[1][1]}`;
+        } else { return; }
+
+        const res = await fetch('/api/manual-edge?' + q, { method: 'POST' }).then(r => r.json());
+        if (!res.ok) { setStatus(res.message, 'fail'); return; }
+
+        // 저장은 됐는데 그래프에 안 들어가는 경우가 있다 — 이미 지운 엣지를 또 지우거나,
+        // 좌표가 그래프에서 멀 때다. 엣지 수만 보여주면 성공한 줄 알고 넘어간다.
+        if (res.failed > 0) {
+            setStatus(`저장은 됐지만 ${res.failed}건이 반영되지 않았습니다. `
+                + (res.problems && res.problems.length ? res.problems[res.problems.length - 1] : ''), 'fail');
+        } else if (res.edgeBefore === res.edgeAfter) {
+            setStatus(`${mode} 저장했지만 엣지 수가 그대로입니다(${res.edgeAfter}). 이미 반영된 것일 수 있습니다.`, 'fail');
+        } else {
+            setStatus(`${mode} 저장. 엣지 ${res.edgeBefore} → ${res.edgeAfter}`, 'ok');
+        }
+        clearEdgePick();
+        await loadManualList();
+        await loadConstruction();
+        buildEditList();
+        await refreshGraph();
+    }
+
+    async function loadManualList() {
+        const rows = await fetch('/api/manual-edge').then(r => r.json());
+        const box = $('e-list');
+        box.innerHTML = rows.length ? '' : '<span style="color:#888">직접 수정한 엣지가 없습니다.</span>';
+        rows.forEach(m => {
+            const div = document.createElement('div');
+            div.style.cssText = 'display:flex; justify-content:space-between; gap:6px; padding:2px 0';
+            const mark = m.action === '삭제' ? '－' : (m.action === '추가-고정' ? '◆' : '＋');
+            div.innerHTML = `<span>${mark} `
+                + `${m.fromLat.toFixed(5)}, ${m.fromLng.toFixed(5)}</span>`;
+            const b = document.createElement('button');
+            b.textContent = '되돌리기';
+            b.style.cssText = 'font-size:11px; padding:1px 5px; cursor:pointer';
+            b.addEventListener('click', async () => {
+                const r = await fetch(`/api/manual-edge/${m.id}`, { method: 'DELETE' }).then(x => x.json());
+                if (!r.ok) { setStatus(r.message, 'fail'); return; }
+                setStatus(`되돌렸습니다. 엣지 ${r.edgeBefore} → ${r.edgeAfter}`, 'ok');
+                await loadManualList();
+                await refreshGraph();
+            });
+            div.appendChild(b);
+            box.appendChild(div);
+        });
+    }
+
+    function makeLine(coords, color, weight) {
+        return new kakao.maps.Polyline({
+            path: coords.map(c => new kakao.maps.LatLng(c[0], c[1])),
+            strokeWeight: weight, strokeColor: color, strokeOpacity: 0.8,
+            strokeStyle: 'solid', zIndex: 1
+        });
+    }
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    $('t-conline').addEventListener('change', applyConstructionOverlays);
+    $('t-noteline').addEventListener('change', applyConstructionOverlays);
+    $('t-graph').addEventListener('change', refreshGraph);
+
+    document.querySelectorAll('input[name="emode"]').forEach(r =>
+        r.addEventListener('change', async () => {
+            clearEdgePick();
+            const m = eMode();
+
+            // 제보 등록이 켜져 있으면 끈다. 둘 다 켜지면 클릭이 어느 쪽으로 갈지 알 수 없다
+            // (실제로는 엣지 쪽이 먼저 먹어서 제보가 조용히 안 찍힌다 - 더 나쁘다).
+            if (m && $('r-add').checked) {
+                $('r-add').checked = false;
+                closeReport();
+            }
+            $('e-hint').textContent = m === '추가'
+                ? '노드 두 개를 클릭하세요. 빠진 횡단보도·끊긴 보도 연결을 잇습니다.'
+                : m === '추가-고정'
+                    ? '찍은 자리에 노드를 만듭니다. 스냅하지 않으니 없는 보도를 직접 놓을 때 쓰세요. '
+                      + '이어 그리려면 앞서 찍은 점을 다시 클릭하면 됩니다(2m 안이면 같은 노드).'
+                : m === '삭제'
+                    ? '지울 엣지 근처를 클릭하세요. 아파트를 가로지르는 등 실제로 못 다니는 엣지를 뺍니다.'
+                    : '끄기 상태입니다.';
+
+            // 엣지를 보고 골라야 하므로 그래프를 자동으로 켠다.
+            if (m && !$('t-graph').checked) {
+                $('t-graph').checked = true;
+            }
+            await refreshGraph();
+            if (m && (graphCache.nodes || []).length === 0) {
+                setStatus('이 축척에서는 그래프가 안 보입니다. 확대하세요.', 'fail');
+            }
+        }));
+    $('e-apply').addEventListener('click', applyEdgeEdit);
+    $('e-clear').addEventListener('click', () => { clearEdgePick(); setStatus('선택을 취소했습니다.', 'wait'); });
+
+    $('ed-note-edit').addEventListener('change', () => {
+        drawEditNote();   // 편집 중이면 분홍, 아니면 검정
+        $('ed-note-hint').textContent = $('ed-note-edit').checked
+            ? '지도를 클릭하면 가까운 쪽 끝점(A/B)이 그 자리로 옮겨집니다. 공사 점은 안 움직입니다.'
+            : '켜면 지도 클릭이 공사 점 대신 기준선의 가까운 끝점을 옮깁니다.';
+    });
+    $('ed-note-init').addEventListener('click', () => {
+        initNoteLine();
+        setStatus('지금 막고 있는 구간에서 기준선을 만들었습니다.', 'wait');
+    });
+    $('ed-note-save').addEventListener('click', () => saveNoteLine(false));
+    $('ed-note-clear').addEventListener('click', () => saveNoteLine(true));
+    $('ed-radius').addEventListener('input', refreshPreview);
+    $('ed-default').addEventListener('change', refreshPreview);
+    $('ed-twin-apply').addEventListener('change', applyConstructionOverlays);
+    $('ed-save').addEventListener('click', saveZone);
+    $('ed-cancel').addEventListener('click', () => {
+        closeEditor();
+        setStatus('수정을 취소했습니다.', 'wait');
+    });
+
+    // ── 제보
+    $('t-report').addEventListener('change', applyReportOverlays);
+
+    $('r-add').addEventListener('change', () => {
+        if ($('r-add').checked) {
+            // 엣지 수정이 켜져 있으면 그쪽이 클릭을 먼저 먹어 제보를 찍을 수 없다.
+            const e = document.querySelector('input[name="emode"]:checked');
+            if (e && e.value) {
+                document.querySelector('input[name="emode"][value=""]').checked = true;
+            }
+            $('r-hint').textContent = '지도를 클릭해 위치를 찍은 뒤 오른쪽에서 [등록] 을 누르세요.';
+            startNewReport();
+        } else {
+            $('r-hint').textContent = '켜면 지도 클릭이 공사 점 대신 제보 위치를 찍습니다.';
+            closeReport();
+            setStatus('제보 등록을 취소했습니다.', 'wait');
+        }
+    });
+
+    document.querySelectorAll('input[name="rsev"]').forEach(r =>
+        r.addEventListener('change', () => { updateSevHint(); refreshReportPreview(); }));
+
+    // 프리셋은 사용자 화면이 보낼 세 값이다. 누르면 '전역값 사용'을 끄고 그 값으로 맞춘다.
+    document.querySelectorAll('.rp-preset button').forEach(b =>
+        b.addEventListener('click', () => {
+            $('rp-default').checked = false;
+            $('rp-radius').value = b.dataset.m;
+            refreshReportPreview();
+        }));
+
+    $('rp-radius').addEventListener('input', refreshReportPreview);
+    $('rp-default').addEventListener('change', refreshReportPreview);
+    $('rp-save').addEventListener('click', saveReport);
+    $('rp-cancel').addEventListener('click', () => {
+        closeReport();
+        setStatus('제보를 취소했습니다.', 'wait');
+    });
+    document.querySelectorAll('#rp-status-box button').forEach(b =>
+        b.addEventListener('click', () => setReportStatus(b.dataset.st)));
+
+    boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  장애물 제보. 하드필터 3번(높음)의 원천 데이터이면서, 낮음·보통은 화면 표시와
+  경로 A/B 선택에 쓰인다. 정도별로 하는 일이 다른 것이 이 테이블의 핵심이다.
+
+  차단 Set 을 만드는 조회(getBlockingReportPoints)는 GraphMapper.xml 에 따로 있다.
+  같은 테이블이지만 조건이 정반대라 - 그쪽은 '높음 + 대기/공개' 만, 이쪽은 전부 - 합치지 않았다.
+-->
+<mapper namespace="kopo.poly.mapper.IReportMapper">
+
+    <!--
+      날짜를 문자열로 뽑는 이유는 화면에 그대로 찍기 위해서다. 날짜 연산을 하지 않으므로
+      DATETIME 으로 받아 다시 포맷하는 왕복이 필요 없다. GraphMapper 의 공사기간과 같은 방식이다.
+
+      최근 것이 위로 온다 - 제보는 '방금 올라온 것'을 먼저 봐야 하는 데이터다.
+    -->
+    <sql id="columns">
+        ID
+             , REGION_ID
+             , USERNAME
+             , VERIFIED_BY
+             , EDGE_ID
+             , LATITUDE
+             , LONGITUDE
+             , BLOCK_RADIUS_M
+             , OBSTACLE_TYPE
+             , SEVERITY
+             , DESCRIPTION
+             , PHOTO_URL
+             , STATUS
+             , RESOLVED_COUNT
+             , DATE_FORMAT(REPORTED_AT, '%Y-%m-%d %H:%i') AS REPORTED_AT
+             , DATE_FORMAT(VERIFIED_AT, '%Y-%m-%d %H:%i') AS VERIFIED_AT
+    </sql>
+
+    <select id="getReports" parameterType="String" resultType="ObstacleReportDTO">
+        SELECT <include refid="columns"/>
+          FROM OBSTACLE_REPORTS
+         WHERE REGION_ID = #{regionId}
+         ORDER BY ID DESC
+    </select>
+
+    <select id="getReport" resultType="ObstacleReportDTO">
+        SELECT <include refid="columns"/>
+          FROM OBSTACLE_REPORTS
+         WHERE ID        = #{id}
+           AND REGION_ID = #{regionId}
+    </select>
+
+    <!--
+      EDGE_ID 를 컬럼 목록에서 아예 뺐다. NULL 을 명시적으로 넣는 것보다 낫다 -
+      EDGES.ID 는 재적재하면 새로 매겨져서, 저장해두면 엉뚱한 엣지를 막게 된다.
+      게다가 GraphHolder.collect() 는 이 값이 차 있으면 좌표 매칭을 건너뛰므로
+      한 번 채우면 좌표로 고칠 수도 없어진다. 넣을 수 없게 해두는 편이 안전하다.
+
+      STATUS 와 RESOLVED_COUNT 도 뺐다. DDL 의 DEFAULT('대기', 0)가 채운다.
+    -->
+    <insert id="insertReport" parameterType="ObstacleReportDTO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO OBSTACLE_REPORTS
+            (REGION_ID, USERNAME, LATITUDE, LONGITUDE, BLOCK_RADIUS_M,
+             OBSTACLE_TYPE, SEVERITY, DESCRIPTION, PHOTO_URL)
+        VALUES
+            (#{regionId}, #{username}, #{latitude}, #{longitude}, #{blockRadiusM},
+             #{obstacleType}, #{severity}, #{description}, #{photoUrl})
+    </insert>
+
+    <!--
+      BLOCK_RADIUS_M 은 NULL 을 허용해야 한다 - '전역 설정값을 쓴다'는 뜻이라
+      값을 비우는 것도 유효한 수정이다. #{} 는 null 을 그대로 넣어준다.
+      공사구간의 updateConstructionZone 과 같은 이유·같은 모양이다.
+    -->
+    <update id="updateReportLocation">
+        UPDATE OBSTACLE_REPORTS
+           SET LATITUDE       = #{latitude}
+             , LONGITUDE      = #{longitude}
+             , BLOCK_RADIUS_M = #{blockRadiusM}
+         WHERE ID        = #{id}
+           AND REGION_ID = #{regionId}
+    </update>
+
+    <!--
+      VERIFIED_AT 을 NOW() 로 채운다. '서버가 언제 처리했나'라서 DB 시계 하나로 통일한다.
+      애플리케이션에서 넘기면 서버가 여러 대가 됐을 때 시계가 갈린다.
+
+      REPORTED_AT(제보 시각)은 건드리지 않는다 - 표시용 신선도라 처리와 무관하다.
+    -->
+    <update id="updateReportStatus">
+        UPDATE OBSTACLE_REPORTS
+           SET STATUS      = #{status}
+             , VERIFIED_BY = #{verifiedBy}
+             , VERIFIED_AT = NOW()
+         WHERE ID        = #{id}
+           AND REGION_ID = #{regionId}
+    </update>
+
+</mapper>

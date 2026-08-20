@@ -115,6 +115,9 @@ body.main-body {
 }
 
 .transport-button {
+    /* ★ 지도·버스는 <a> 다(링크라야 /map.html 로 넘어간다). 링크 기본 밑줄을 지운다 —
+       빼먹으면 버튼 안 글자에 밑줄이 그어져 눌린 것처럼 보인다. */
+    text-decoration: none;
     width: clamp(105px, 9vw, 145px);
     height: clamp(105px, 9vw, 145px);
     display: flex;
@@ -396,6 +399,11 @@ body.main-body {
 
 .hero-actions { display: flex; align-items: center; gap: 24px; margin-top: 30px; }
 .hero-primary-button {
+    /* ★ 이것도 <a> 다. inline-flex + align-items 가 없으면 height 52px 안에서
+       글자가 위로 붙는다(button 은 저절로 가운데 오지만 a 는 안 그렇다). */
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
     height: 52px;
     padding: 0 26px;
     border: 1px solid #d59585;

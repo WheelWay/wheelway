@@ -1,0 +1,1563 @@
+/*
+  사용자용 경로 화면.
+  피그마 시안(1920x1080 기준)의 색·골격에, 카카오맵 길찾기의 흐름을 얹었다.
+  데스크톱이 기준이고, 좁아지면 무너지지 않을 만큼만 대응한다.
+
+  검증용 화면인 route.html / admin.html 과 달리 이 화면은 일반 사용자가 본다.
+  그래서 탐색 통계(방문 노드·계산 시간·스냅 거리)는 여기에 두지 않는다.
+*/
+
+:root {
+    /* 시안의 크림·골드 계열. 값을 바꿀 일이 있으면 여기만 고친다. */
+    --cream:      #fdf8f1;
+    --cream-deep: #f7efe2;
+    --edge:       #ebdcc6;
+    --gold:       #f2c14e;
+    --ink:        #2a2724;
+    --ink-soft:   #6b635a;
+
+    /* 출발·도착·경로선. 지도 위와 패널에서 같은 색을 써야 눈이 이어진다. */
+    --start:  #2e7d32;
+    --end:    #c62828;
+    --route:  #1565c0;
+
+    --rail-w:  108px;
+    --panel-w: 372px;
+
+    /* 정류장 칸. 접으면 손잡이(16px)만 남는다. */
+    --side-w:  260px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    font-family: "Pretendard", "맑은 고딕", "Malgun Gothic", sans-serif;
+    color: var(--ink);
+    background: var(--cream);
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+input  { font: inherit; color: inherit; }
+
+/* ── 전체 골격 ─────────────────────────────────────────────
+   레일 + 패널 + 지도. 지도가 남는 폭을 전부 먹는다. */
+.shell { display: flex; height: 100%; }
+
+/* ── 왼쪽 세로 탭 레일 ─────────────────────────────────────── */
+.rail {
+    flex: 0 0 var(--rail-w);
+    background: var(--cream);
+    border-right: 1px solid var(--edge);
+    padding-top: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rail-tab {
+    border: 0;
+    background: transparent;
+    padding: 22px 0;
+    margin-right: 10px;
+    font-size: 19px; font-weight: 700;
+    color: var(--ink);
+    text-align: center;
+    border-radius: 0 10px 10px 0;
+    /* 제보 탭만 <a> 다. 나머지 <button> 과 같아 보이게 맞춘다. */
+    display: block;
+    width: 100%;
+    text-decoration: none;
+}
+
+.rail-tab:hover    { background: var(--cream-deep); }
+.rail-tab.is-active { background: var(--gold); color: #3a2f14; }
+.rail-tab.is-soon   { color: var(--ink-soft); font-weight: 600; }
+
+/*
+  마이페이지. 흰 칸으로 고정한다 — 버스·택시(흐린 글씨)와도, 지도(골드)와도 다른 자리라는 표시다.
+  누르는 동안에는 지도 탭이 켜졌을 때와 같은 골드가 된다. 화면이 아직 없어서
+  '눌렀다'를 보여줄 수 있는 것이 이것뿐이다.
+*/
+.rail-my         { background: #fff; }
+.rail-my:hover   { background: var(--cream-deep); }
+.rail-my:active  { background: var(--gold); color: #3a2f14; }
+
+/* 제보. 아이콘과 글자를 한 줄에 붙인다.
+   line-height 를 박아 다른 탭과 높이를 맞춘다 — 글자가 작아 그냥 두면 3px 낮아진다. */
+.rail-report {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 17px;
+    line-height: 26px;
+}
+
+/*
+  레일 맨 아래 아이콘 둘 — 메인으로 돌아가기, 그리고 관리자 입구.
+  위 탭들과 성격이 달라(이동이지 화면 전환이 아니다) 글자 대신 아이콘으로 두고 자리도 떨어뜨린다.
+
+  margin-top:auto 는 위쪽 하나(.rail-home)에만 준다. 둘 다 주면 남는 공간이
+  둘로 나뉘어 아이콘 사이가 벌어진다.
+*/
+.rail-home,
+.rail-admin {
+    align-self: center;
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    color: var(--ink-soft);
+    text-decoration: none;
+}
+
+.rail-home  { margin-top: auto; margin-bottom: 6px; }
+.rail-admin { margin-bottom: 18px; }
+
+.rail-home:hover,
+.rail-admin:hover { background: var(--cream-deep); color: var(--ink); }
+
+/* ── 왼쪽 패널 ─────────────────────────────────────────────── */
+.panel {
+    position: relative;
+    flex: 0 0 var(--panel-w);
+    background: var(--cream);
+    border-right: 1px solid var(--edge);
+    overflow-y: auto;
+}
+
+.panel-inner { padding: 22px 20px 28px; }
+
+/* ── 출발·도착 입력 ────────────────────────────────────────
+   시안 배치다. 출발 칸 → '현재위치 찾기' → 도착 칸 → 바로가기가 세로로 쌓인다. */
+.io { display: block; }
+/* 택시 탭에서는 통째로 감춘다. display 를 박아뒀으므로 [hidden] 만으로는 안 사라진다. */
+.io[hidden] { display: none; }
+
+.field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--cream-deep);
+    border: 1.5px solid var(--edge);
+    border-radius: 999px;
+    padding: 14px 18px;
+}
+
+.field:focus-within { border-color: var(--gold); background: #fff; }
+
+.field > svg { flex: 0 0 auto; color: var(--ink-soft); }
+
+.field input {
+    flex: 1 1 auto; min-width: 0;
+    border: 0; background: transparent; outline: none;
+    font-size: 15.5px;
+}
+
+.field input::placeholder { color: var(--ink-soft); }
+
+.field-clear {
+    flex: 0 0 auto;
+    border: 0; background: transparent;
+    padding: 2px 0 2px 4px;
+    font-size: 12px; color: var(--ink-soft);
+}
+
+.field-clear[hidden] { display: none; }
+
+/* ── 자동완성 목록 ─────────────────────────────────────────
+   카카오는 입력한 글자만 색을 준다. 어디가 걸렸는지 바로 보이기 때문에 같게 했다. */
+.suggest {
+    position: absolute;
+    top: calc(100% + 5px); left: 0; right: 0;
+    z-index: 30;
+    margin: 0; padding: 5px 0;
+    list-style: none;
+    max-height: 320px; overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .13);
+}
+
+.suggest[hidden] { display: none; }
+
+.suggest li { }
+
+.suggest button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0; background: transparent;
+    padding: 9px 18px;
+    font-size: 13.5px;
+    line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.suggest button:hover,
+.suggest button.is-cursor { background: var(--cream-deep); }
+
+.suggest .hit { color: #d1671f; font-weight: 600; }
+
+.suggest .sub { display: block; font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+
+/* 지도 위 검색바에 붙는 목록은 흰 배경 위라 그림자를 조금 더 준다. */
+.suggest-top { box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+
+/* ── 두 칸 사이 줄 ─────────────────────────────────────────
+   왼쪽에 '현재위치 찾기', 오른쪽 끝에 교체 버튼이 선다. */
+.io-mid { display: flex; align-items: center; justify-content: space-between; }
+
+.swap {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    margin-right: 2px;
+    border: 0; border-radius: 8px;
+    background: transparent;
+    color: var(--ink-soft);
+    padding: 0;
+}
+
+.swap:hover { background: var(--cream-deep); color: var(--ink); }
+
+/* ── 보조 버튼 ─────────────────────────────────────────────
+   두 입력 칸 사이에 낀다. 시안에서 칸보다 살짝 안쪽으로 들여쓴 자리다. */
+.mini {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 0; background: transparent;
+    padding: 8px 6px 8px 18px;
+    font-size: 13.5px; color: var(--ink-soft);
+}
+
+.mini:hover { color: var(--ink); }
+
+/* 집 · 회사 · 자주가는 경로 */
+.shortcuts {
+    display: flex; align-items: center; gap: 18px;
+    padding: 13px 6px 0 18px;
+}
+
+.shortcut {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 0; background: transparent;
+    padding: 4px 0;
+    font-size: 14px; color: var(--ink-soft);
+}
+
+.shortcut:hover { color: var(--ink); }
+
+/* ── 상태 문구 ─────────────────────────────────────────────── */
+.status {
+    margin-top: 14px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 14px; line-height: 1.55;
+    background: var(--cream-deep);
+    color: var(--ink-soft);
+}
+
+.status.is-ok   { background: #e9f4ec; color: #1f5d33; }
+.status.is-fail { background: #fdecec; color: #99302c; }
+
+/* ── 구역 공통 ─────────────────────────────────────────────── */
+.pane { margin-top: 18px; }
+.pane[hidden] { display: none; }
+
+.pane-head {
+    padding: 0 4px 10px;
+    font-size: 13px; color: var(--ink-soft);
+    border-bottom: 1px solid var(--edge);
+}
+
+.pane-head b { color: var(--ink); }
+
+.pane-count { float: right; font-size: 12px; }
+
+/* ── 장소 검색 결과 ─────────────────────────────────────────
+   카카오처럼 A·B·C 로 매긴다. 지도 마커의 글자와 같은 값이라 눈으로 이어진다. */
+.place-list { list-style: none; margin: 0; padding: 0; }
+
+.place-list li { border-bottom: 1px solid var(--edge); }
+
+.place-item {
+    position: relative;
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0; background: transparent;
+    padding: 13px 58px 13px 6px;
+    line-height: 1.5;
+}
+
+.place-item:hover { background: var(--cream-deep); }
+
+.place-item.is-picked { background: #eaf2fd; }
+
+.place-name { font-size: 14px; font-weight: 700; }
+
+.place-name .mark { color: var(--route); margin-right: 6px; }
+
+.place-name .cat {
+    font-size: 11.5px; font-weight: 500; color: var(--ink-soft); margin-left: 5px;
+}
+
+.place-addr { font-size: 12.5px; color: #46403a; margin-top: 3px; }
+
+.place-jibun, .place-tel { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+
+/* 이 결과가 출발지·도착지로 잡혔음을 알리는 배지. */
+.place-badge {
+    position: absolute;
+    top: 50%; right: 8px;
+    transform: translateY(-50%);
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11.5px; font-weight: 700; color: #fff;
+    background: var(--start);
+}
+
+.place-badge.is-end { background: var(--end); }
+
+.more {
+    width: 100%;
+    margin-top: 10px;
+    padding: 9px;
+    border: 1px solid var(--edge); border-radius: 8px;
+    background: #fff;
+    font-size: 12.5px; color: var(--ink-soft);
+}
+
+.more:hover { background: var(--cream-deep); }
+.more[hidden] { display: none; }
+
+/* ── 경로 결과 ─────────────────────────────────────────────
+   카카오의 파란 '최단거리' 표기는 두지 않는다. 고를 경로가 하나뿐이라 이름 붙일 게 없다.
+   이동수단 탭도 없다. 이 서비스는 도보 고정이다. */
+.route-sum {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 4px 4px 0;
+}
+
+.route-time { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+
+.route-dist { font-size: 15px; color: var(--ink-soft); }
+
+.route-note {
+    padding: 6px 4px 14px;
+    font-size: 12.5px; color: var(--ink-soft);
+    border-bottom: 1px solid var(--edge);
+}
+
+.steps-head {
+    padding: 14px 4px 8px;
+    font-size: 13px; font-weight: 700;
+}
+
+.steps { list-style: none; margin: 0; padding: 0; }
+
+/* 아직 채우지 않은 자리. 도로명 데이터가 생기면 여기에 단계가 들어온다. */
+.steps-empty {
+    padding: 26px 12px;
+    border: 1px dashed var(--edge);
+    border-radius: 10px;
+    text-align: center;
+    font-size: 12.5px; color: var(--ink-soft);
+    background: var(--cream-deep);
+}
+
+/* ── 최근경로 ─────────────────────────────────────────────── */
+.section-title { margin: 0 0 9px; padding-left: 4px; font-size: 15.5px; font-weight: 700; }
+
+.recent-list { list-style: none; margin: 0; padding: 0; }
+
+.recent-list li { border-bottom: 1px solid var(--edge); }
+
+.recent-list button {
+    width: 100%; text-align: left;
+    border: 0; background: transparent;
+    padding: 12px 6px;
+    font-size: 14px; line-height: 1.5;
+}
+
+.recent-list button:hover { background: var(--cream-deep); }
+
+.recent-list .rc-line { display: block; }
+.recent-list .rc-line .dotm { color: var(--start); margin-right: 5px; }
+.recent-list .rc-line.is-end .dotm { color: var(--end); }
+.recent-list .rc-sub { display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; }
+
+.recent-list .empty {
+    padding: 12px 6px;
+    font-size: 13.5px; color: var(--ink-soft);
+    border-bottom: 0;
+}
+
+/* 계단은 옵션이 아니라 항상 제외라서 문구로만 알린다. */
+.note {
+    margin: 24px 0 0;
+    padding: 12px 14px;
+    background: var(--cream-deep);
+    border-radius: 8px;
+    font-size: 13px; line-height: 1.7;
+    color: var(--ink-soft);
+}
+
+/* ── 출발시간 추천 ─────────────────────────────────────────
+   경로 결과 아래에 붙는다. 도착 목표를 넣으면 나갈 시각이 나오고,
+   [출발]/[도착] 으로 실제 걸린 시간을 재서 개인 속도를 만든다. */
+.leave {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--edge);
+}
+
+/* ── 스톱워치 ──────────────────────────────────────────────
+   집에서 정류장까지 한 구간을 잰다. 재는 동안 숫자가 계속 움직여야
+   '지금 재고 있다'가 분명해진다. */
+.sw { text-align: center; padding: 6px 0 2px; }
+
+.sw-time {
+    font-size: 40px; font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -1px;
+    /* 숫자 폭이 들쭉날쭉하면 초가 바뀔 때마다 글자가 흔들린다. */
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+.sw.is-running .sw-time { color: #2e7d32; }
+
+.sw-hint { margin-top: 6px; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+
+/* 잰 기록. 브라우저에만 있다(WALK_RECORDS 로 옮기는 것은 보류 중). */
+.sw-list { margin-top: 12px; text-align: left; }
+.sw-list-head { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 4px; }
+.sw-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    border-top: 1px solid var(--edge);
+}
+.sw-row span:first-child { font-weight: 700; min-width: 42px; }
+/* 평균에서 뺀 기록. 지우지 않고 남겨두므로, 셈에 안 들어간다는 것이 보여야 한다. */
+.sw-row.is-off { color: var(--ink-soft); }
+.sw-row.is-off span:first-child { text-decoration: line-through; }
+
+/*
+  유난히 오래 걸린 기록. [도착] 누르는 걸 잊었을 때가 이렇게 나온다.
+  자동으로 지우지 않는 이유는 정말 그만큼 걸리는 사람이 있기 때문이다 —
+  눈에 띄게만 해두고 지울지는 사람이 정한다.
+*/
+.sw-row.is-long span:first-child { color: #c62828; }
+.sw-when { flex: 1; font-size: 12px; color: var(--ink-soft); }
+.sw-del {
+    border: 0; background: none; padding: 2px 4px;
+    font-size: 12px; color: var(--ink-soft); text-decoration: underline;
+}
+
+/* ── 주변 정류장·도착 안내 ─────────────────────────────────
+   이 화면이 답하는 것은 '휠체어로 탈 수 있는 버스가 몇 분 뒤에 오나' 하나다.
+   그래서 저상 표시가 노선 번호보다 시각적으로 앞선다. */
+
+.bus-find {
+    width: 100%;
+    height: 40px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink);
+    font-size: 14px; font-weight: 700;
+}
+.bus-find:hover     { background: var(--cream-deep); }
+.bus-find:disabled  { color: var(--ink-soft); }
+
+/* 안내·오류 문구. 목록이 비었을 때 왜 비었는지가 여기 뜬다. */
+.bus-note {
+    margin-top: 8px;
+    font-size: 12px; line-height: 1.6;
+    color: var(--ink-soft);
+}
+.bus-note.is-fail { color: #c62828; }
+
+.bus-stop-list { list-style: none; margin: 10px 0 0; padding: 0; }
+
+/* 목록 머리. 몇 곳인지와 닫는 길. */
+.bus-stop-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700;
+    color: var(--ink-soft);
+    padding-bottom: 2px;
+}
+.bus-stop-head span { flex: 1; }
+.bus-stop-close {
+    border: 1px solid var(--edge); border-radius: 6px;
+    background: #fff; padding: 3px 8px;
+    font-size: 12px; color: var(--ink-soft);
+}
+.bus-stop-close:hover { background: var(--cream-deep); color: var(--ink); }
+
+.bus-stop {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%;
+    padding: 9px 4px;
+    border: 0; border-top: 1px solid var(--edge);
+    background: none;
+    font-size: 14px; text-align: left;
+    color: var(--ink);
+}
+.bus-stop:hover { background: var(--cream-deep); }
+.bus-stop.is-picked { background: var(--cream-deep); font-weight: 700; }
+.bus-stop-name { flex: 1; }
+/* 거리는 결정에 쓰는 값이라 남기되, 이름보다 뒤로 물린다. */
+.bus-stop-dist { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* ── 지도 위 정류장 마커 ───────────────────────────────────
+   같은 이름이 방향별로 겹쳐 있는 자리라, 이름표를 늘 띄우면 서로 가려 못 읽는다.
+   마우스를 올린 하나만 보여준다. */
+.bus-mk { position: relative; cursor: pointer; }
+
+/*
+  버스 모양은 직접 그린다(인라인 SVG). 카카오 지도에 그려진 아이콘은 카카오 저작물이라
+  가져다 쓰지 않는다. 직접 그리면 파일도 필요 없고 상태에 따라 색만 바꾸면 된다.
+*/
+.bus-mk-pin {
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px;
+    border-radius: 50% 50% 50% 2px;      /* 왼쪽 아래만 뾰족하게 — 지도 핀 느낌 */
+    transform: rotate(-45deg);
+    background: #9a9186;                  /* 기본은 회색: '여기 정류장이 있다' */
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+    color: #fff;
+}
+.bus-mk-pin svg { transform: rotate(45deg); }   /* 핀만 돌리고 버스는 똑바로 */
+
+/* 방금 찾은 가까운 정류장. 목록에 뜬 그것이라 눈에 띄어야 한다. */
+.bus-mk.is-near .bus-mk-pin { background: var(--route); }
+
+/* 고른 정류장. 도착 핀과 같은 색이라 설명이 필요 없다. */
+.bus-mk.is-picked .bus-mk-pin {
+    background: var(--end);
+    width: 26px; height: 26px;
+}
+
+.bus-mk-label {
+    position: absolute;
+    left: 50%; bottom: 26px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    padding: 4px 9px;
+    border: 1px solid var(--edge);
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+    font-size: 12px; color: var(--ink);
+    /* 이름표가 마우스를 가로채면 그 아래 점을 못 누른다. */
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .12s;
+}
+.bus-mk:hover .bus-mk-label { opacity: 1; }
+
+.bus-board {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--edge);
+}
+.bus-board-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px;
+}
+.bus-board-head b { flex: 1; }
+.bus-only { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.bus-refresh {
+    border: 1px solid var(--edge); border-radius: 6px;
+    background: #fff; padding: 3px 8px;
+    font-size: 12px; color: var(--ink-soft);
+}
+.bus-refresh:hover { background: var(--cream-deep); color: var(--ink); }
+
+.bus-arrivals { list-style: none; margin: 8px 0 0; padding: 0; }
+
+.bus-arrival {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%;
+    padding: 10px 4px;
+    border: 0; border-top: 1px solid var(--edge);
+    background: none;
+    text-align: left;
+    color: var(--ink);
+}
+.bus-arrival:hover { background: var(--cream-deep); }
+
+/*
+  저상/일반 배지.
+  '알 수 없음'을 회색으로 따로 두는 이유: 저상이 아닌 것과 모르는 것은 다르다.
+  모르는 것을 '일반'으로 칠하면 탈 수 있는 버스를 놓치게 한다.
+*/
+.bus-badge {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: 5px;
+    font-size: 11px; font-weight: 700;
+    white-space: nowrap;
+}
+.bus-badge.is-low     { background: #2e7d32; color: #fff; }
+.bus-badge.is-normal  { background: var(--cream-deep); color: var(--ink-soft); }
+.bus-badge.is-unknown { background: #eee; color: var(--ink-soft); }
+
+.bus-route-no { flex: 1; font-size: 15px; font-weight: 700; }
+.bus-route-tp { font-size: 12px; color: var(--ink-soft); }
+
+/* 남은 시간. 사용자가 이 줄에서 실제로 읽는 값이라 제일 크다. */
+.bus-eta {
+    font-size: 15px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bus-eta small { display: block; font-size: 11px; font-weight: 400; color: var(--ink-soft); }
+/* 곧 도착. 지금 나가야 하는지 아닌지가 갈리는 순간이라 눈에 띄어야 한다. */
+.bus-eta b { color: #c62828; }
+
+/*
+  '저상만' 에 걸러졌지만 그래도 보여주는 줄.
+  통째로 감추면 '오는 버스가 없다'로 읽혀서 남기되, 탈 수 있는 버스와는 구분돼야 한다.
+*/
+.bus-arrival.is-muted { opacity: .5; }
+.bus-arrival.is-muted .bus-eta b { color: var(--ink-soft); }
+
+/* 같은 이름의 반대편 정류장으로 건너가는 줄. 도착이 0건일 때만 뜬다. */
+.bus-other { margin-top: 8px; font-size: 12px; line-height: 1.9; color: var(--ink-soft); }
+.bus-other-btn {
+    border: 1px solid var(--edge); border-radius: 6px;
+    background: #fff; padding: 3px 8px; margin-right: 4px;
+    font-size: 12px; color: var(--ink);
+}
+.bus-other-btn:hover { background: var(--cream-deep); }
+
+/*
+  ★ 저상 운행 노선의 시간표. 도착 목록이 차 있어도 늘 뜬다.
+
+  보은 저상 노선은 실시간에 안 잡혀서, 이 칸이 사용자가 탈 수 있는 버스에 대해
+  화면이 말할 수 있는 유일한 자리다. 그래서 도착 목록 바로 아래에 두고,
+  테두리로 묶어 '곁들이는 정보'가 아니라 '따로 봐야 할 것'으로 보이게 한다.
+*/
+.bus-tt {
+    margin-top: 10px;
+    padding: 9px 10px;
+    border: 1px solid #cfe3d0;
+    border-radius: 8px;
+    background: #f4faf4;
+}
+.bus-tt:empty { display: none; }
+
+.bus-tt-head {
+    font-size: 12px; font-weight: 700;
+    color: #2e7d32;
+    margin-bottom: 4px;
+}
+
+.bus-tt-row {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 6px 0 2px;
+    border-top: 1px solid #dcecdd;
+}
+.bus-tt-row:first-of-type { border-top: 0; }
+.bus-tt-row .bus-route-no { flex: 0 0 auto; min-width: 44px; font-size: 15px; font-weight: 700; }
+
+.bus-tt-legs { flex: 1; min-width: 0; }
+
+.bus-tt-leg {
+    display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+    font-size: 12px; line-height: 1.7;
+}
+/* 어느 방향인지. 이걸 빼면 오는 편과 가는 편이 뒤섞여 읽힌다. */
+.bus-tt-dir { color: var(--ink-soft); }
+/* 사용자가 이 칸에서 실제로 읽는 값. */
+.bus-tt-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.bus-tt-more { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.bus-tt-count { color: var(--ink-soft); }
+.bus-tt-done { color: var(--ink-soft); }
+
+/*
+  '저상 노선'과 '저상차가 온다'는 다른 말이다. 그 차이를 모르면 오지 않는 차를 기다린다.
+  노선마다 반복하면 정작 시각이 묻히므로 칸 끝에 한 번만 단다.
+*/
+.bus-tt-foot {
+    margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid #dcecdd;
+    font-size: 11px; line-height: 1.6;
+    color: var(--ink-soft);
+}
+
+/*
+  도착정보가 0건일 때 대신 보여주는 경유 노선.
+  한 줄로 이어 쓰면 문단이 돼서 안 읽힌다 — 노선마다 한 줄씩 끊는다.
+  저상 여부는 노선 단위로 알 수 없으므로 배지를 달지 않는다.
+*/
+.bus-routes { margin-top: 10px; }
+
+.bus-route-group {
+    margin-top: 10px;
+    font-size: 12px; font-weight: 700;
+    color: var(--ink-soft);
+}
+.bus-route-group:first-child { margin-top: 0; }
+
+.bus-route-row {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 5px 2px;
+    border-top: 1px solid var(--edge);
+    font-size: 13px;
+}
+/* 노선 번호가 먼저 눈에 들어와야 한다 — 사용자는 자기 번호 하나를 찾는다. */
+.bus-route-row .bus-route-no { flex: 0 0 auto; min-width: 44px; font-size: 14px; font-weight: 700; }
+.bus-route-when { flex: 1; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* 끝난 노선은 줄을 차지할 이유가 없다. 개수만. */
+.bus-route-done { margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+
+/* 스톱워치 제목. 위 도착 안내와 붙어 보이지 않게 사이를 벌린다. */
+.bus-h2 { margin-top: 22px; }
+
+/* 아직 못 하는 것들. 자리를 비워두는 것보다 왜 없는지 적어두는 편이 낫다. */
+.bus-empty {
+    padding: 14px 0;
+    font-size: 13px; line-height: 1.7;
+    color: var(--ink-soft);
+}
+.bus-soon {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--edge);
+    font-size: 12px;
+    color: var(--ink-soft);
+}
+
+/* ── 택시 탭 — 장애인콜택시 안내 ─────────────────────────
+   기관 두 곳(DTIS 통합 / 충북 센터)을 나란히 두고, 누르면 아래가 바뀐다. */
+
+.taxi-pick { display: flex; gap: 6px; }
+
+.taxi-org {
+    flex: 1;
+    height: 38px;
+    padding: 0 6px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 14px; font-weight: 700;
+    color: var(--ink-soft);
+}
+.taxi-org:hover     { background: var(--cream-deep); }
+/* 레일 탭이 켜졌을 때와 같은 골드. 화면 안에서 '지금 이것'은 한 가지 색이어야 한다. */
+.taxi-org.is-active { background: var(--gold); border-color: var(--gold); color: #3a2f14; }
+
+/* 기관이 어떤 곳인지 한 줄. 대상이 달라서 이 줄이 곧 고르는 기준이 된다. */
+.taxi-note {
+    margin: 12px 0 0;
+    font-size: 13.5px; line-height: 1.7;
+    color: var(--ink-soft);
+}
+
+.taxi-row { margin-top: 14px; }
+.taxi-label {
+    font-size: 13px; font-weight: 700;
+    color: var(--ink-soft);
+}
+
+/* 전화번호. 이 화면에서 사용자가 실제로 쓰는 값이라 가장 크게 둔다. */
+.taxi-tel {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 6px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--cream-deep);
+}
+.taxi-tel-no {
+    flex: 1;
+    font-size: 19px; font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .3px;
+}
+/* tel: 은 PC 에서 아무 일도 안 일어날 수 있다. 그래서 번호 자체를 크게 보여주고,
+   버튼은 곁들이는 것으로 둔다 — 버튼만 있으면 PC 사용자는 번호를 알 길이 없다. */
+.taxi-call {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--gold);
+    font-size: 13px; font-weight: 700;
+    color: #3a2f14;
+    text-decoration: none;
+}
+.taxi-call:hover { filter: brightness(.96); }
+
+/* 홈페이지 주소. 맨 윗줄에 두고, 그 아래가 '들어가서 어디를 누르나'다. */
+.taxi-url {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 6px;
+    padding: 9px 12px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+}
+/* 주소가 길어도 칸을 밀지 않게 한 줄로 자른다 — 어차피 [열기] 로 들어간다. */
+.taxi-url-text {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 14px;
+    color: var(--ink);
+}
+.taxi-open {
+    flex: 0 0 auto;
+    padding: 5px 11px;
+    border-radius: 7px;
+    background: var(--cream-deep);
+    font-size: 13.5px; font-weight: 700;
+    color: var(--ink);
+    text-decoration: none;
+}
+.taxi-open:hover { background: var(--edge); }
+
+/* 들어가서 밟는 순서. 목적별로 끊는다 — 한 줄로 이어 쓰면 문단이 돼서 안 읽힌다. */
+.taxi-routes { margin: 10px 0 0; padding: 0; list-style: none; }
+
+.taxi-route {
+    padding: 9px 0;
+    border-top: 1px solid var(--edge);
+}
+.taxi-route:first-child { border-top: 0; padding-top: 2px; }
+
+.taxi-goal { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+
+/*
+  밟는 순서. 홈페이지 주소 칸과 같은 흰 상자에 담는다 —
+  크림 바탕 위에서 흰 칸이 한 번 끊어줘서, '여기가 따라 할 곳'이라는 게 눈에 바로 들어온다.
+  왼쪽 여백을 넉넉히 두는 것은 번호(1. 2.)가 상자 안쪽에 들어와야 하기 때문이다.
+*/
+.taxi-steps {
+    margin: 6px 0 0;
+    padding: 9px 12px 9px 30px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 13.5px; line-height: 1.75;
+    color: var(--ink);
+}
+
+/* 그냥 곁들이는 말과, 모르면 헛걸음하는 말은 무게가 달라야 한다. */
+/*
+  단계 밑에 붙는 곁말. 상자는 위(.taxi-steps)가 쓰므로 여기는 글씨만 둔다 —
+  흰 칸이 둘이면 어느 쪽이 따라 할 곳인지 흐려진다.
+  대신 빨간 글씨로 둔다 — '이 사이트로는 안 되는 것'을 말하는 줄이라 그냥 읽히는 것으로는 모자라고,
+  단계를 밟기 전에 눈에 걸려야 한다. 색은 이 화면이 이미 쓰는 도착 빨강(--end)을 그대로 쓴다.
+*/
+.taxi-subnote {
+    margin-top: 7px;
+    font-size: 13px; line-height: 1.6;
+    font-weight: 600;
+    color: var(--end);
+}
+.taxi-warn {
+    margin-top: 6px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: #fdecec;
+    font-size: 13px; line-height: 1.6;
+    color: #99302c;
+}
+
+/* 챙길 것 — 누가 / 무엇을 / 어떻게. 이름과 내용을 두 칸으로 갈라 눈이 훑을 수 있게 한다. */
+.taxi-spec { margin-top: 8px; }
+
+.taxi-spec-row {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+/* 이름 칸 폭을 고정한다 — 들쭉날쭉하면 내용 시작점이 안 맞아 목록으로 안 읽힌다. */
+.taxi-spec-k {
+    flex: 0 0 72px;
+    font-weight: 700;
+    color: var(--ink-soft);
+}
+
+.taxi-spec-v { flex: 1; min-width: 0; color: var(--ink); }
+/* 값이 여럿이면 줄을 나눈다. 서류처럼 성격이 다른 것이 섞이면 한 줄로는 안 세진다. */
+.taxi-spec-v div + div { margin-top: 3px; }
+
+/* ── 서류 챙기기 ─────────────────────────────────────────
+   자격을 고르면 그 사람 것만 남는다. 셋을 늘어놓으면 남의 서류까지 읽게 된다. */
+
+.taxi-who-pick { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.taxi-who {
+    padding: 5px 9px;
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 12.5px; font-weight: 600;
+    color: var(--ink-soft);
+}
+.taxi-who:hover     { background: var(--cream-deep); }
+.taxi-who.is-active { background: var(--gold); border-color: var(--gold); color: #3a2f14; }
+
+/* 서류 목록은 두 칸 배치에서 빠져나와 제 상자로 선다 — 자격 버튼까지 들어가야 해서 옆칸이 좁다. */
+.taxi-docs-card {
+    margin: 10px 0;
+    padding: 11px 13px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.taxi-docs-title {
+    font-size: 13px; font-weight: 700;
+    color: var(--ink-soft);
+    margin-bottom: 9px;
+}
+
+/* 자격 버튼이 없을 때(자격이 하나뿐인 기관)는 위 여백이 필요 없다. */
+.taxi-doc-list { margin: 9px 0 0; padding: 0; list-style: none; }
+.taxi-who-pick + .taxi-doc-list { margin-top: 9px; }
+.taxi-docs-title + .taxi-doc-list { margin-top: 0; }
+
+/* 서류 이름과 '어떻게 구하나'를 한 줄에 둔다. 좁아지면 아래로 접힌다. */
+.taxi-doc {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+    padding: 7px 0;
+    border-top: 1px solid var(--edge);
+}
+.taxi-doc:first-child { border-top: 0; padding-top: 0; }
+
+/* 이름 전체가 체크 영역이다 — 16px 네모만 누르게 하면 손이 불편한 사람이 못 누른다. */
+.taxi-doc-main {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+}
+/* 체크가 없는 줄. 누를 것이 없으니 손 모양도 주지 않는다. */
+.taxi-doc-main.is-plain { cursor: default; }
+
+/* 체크가 없는 줄도 같은 폭을 비워 이름을 나란히 맞춘다. */
+.taxi-doc-box { flex: 0 0 23px; display: flex; align-items: center; }
+.taxi-doc-box input { width: 16px; height: 16px; margin: 0; accent-color: var(--gold); cursor: pointer; }
+
+.taxi-doc-name { min-width: 0; }
+/* 챙긴 것은 흐려서 뒤로 물러나게 한다. 남은 것이 눈에 남아야 한다. */
+.taxi-doc-main:has(input:checked) .taxi-doc-name {
+    color: var(--ink-soft);
+    text-decoration: line-through;
+}
+
+/* 받을 곳이 있는 것과 없는 것을 눈으로 가른다 — 링크는 누를 수 있게 보여야 한다. */
+.taxi-doc-link {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--cream-deep);
+    font-size: 12px; font-weight: 700;
+    color: var(--ink);
+    text-decoration: none;
+}
+.taxi-doc-link:hover { background: var(--edge); }
+
+.taxi-doc-how {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--ink-soft);
+}
+
+/* 홈페이지 자리. 안에 넣을 내용은 아직 정하지 않았다. */
+.taxi-slot {
+    margin-top: 6px;
+    padding: 18px 12px;
+    border: 1px dashed var(--edge);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    text-align: center;
+}
+
+.leave-ask { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+
+.leave-time {
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 15px;
+}
+
+/* 나갈 시각. 이 화면에서 사용자가 제일 알고 싶은 값이라 가장 크게 둔다. */
+.leave-out {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--cream-deep);
+    font-size: 17px; font-weight: 700;
+    color: var(--ink);
+}
+.leave-out b { color: #c62828; }
+
+/*
+  분석 결과. '도보 대비 몇 분 더'가 첫 줄, 근거(기록 수·배수)가 둘째 줄이다.
+  두 줄을 이으면 배수가 앞에 붙어 읽히므로 줄바꿈을 살린다.
+*/
+.leave-src { margin-top: 6px; font-size: 12px; line-height: 1.6; color: var(--ink-soft); white-space: pre-line; }
+/* 첫 줄만 진하게 — 결정에 쓰는 값과 근거를 눈으로 가른다. */
+.leave-src::first-line { color: var(--ink); font-weight: 700; }
+
+.leave-btn {
+    width: 100%;
+    height: 44px;
+    margin-top: 10px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: var(--gold);
+    color: #3a2f14;
+    font-size: 15px; font-weight: 700;
+}
+.leave-btn:hover { filter: brightness(.97); }
+/* 로그인 전. 눌러봐야 거절당하느니 못 쓴다는 것이 먼저 보이는 편이 낫다. */
+.leave-btn:disabled { background: var(--cream-deep); color: var(--ink-soft); }
+.leave-btn:disabled:hover { filter: none; }
+/* 이동 중. 누르면 기록이 끝나므로 색을 바꿔 '지금 재는 중'을 드러낸다. */
+.leave-btn.is-tracking { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+
+/* 안내 문구 안에 박아넣는 공사 점. 지도 위의 것과 같은 색이라 설명이 필요 없다. */
+.zone-key {
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 1px;
+    border-radius: 50%;
+    background: #ff9800;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .18);
+    vertical-align: baseline;
+}
+
+.meta { margin-top: 15px; font-size: 12px; color: var(--ink-soft); }
+
+/* ── 지도 영역 ─────────────────────────────────────────────── */
+.map-area { position: relative; flex: 1 1 auto; min-width: 0; }
+
+#map { width: 100%; height: 100%; background: #e8e8e6; }
+
+.searchbar {
+    position: absolute;
+    top: 14px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    display: flex; align-items: center; gap: 11px;
+    width: min(640px, calc(100% - 48px));
+    padding: 13px 22px;
+    background: #fff;
+    border: 1.5px solid var(--edge);
+    border-radius: 999px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, .10);
+}
+
+.searchbar:focus-within { border-color: var(--gold); }
+
+.searchbar svg { flex: 0 0 auto; color: var(--ink-soft); }
+
+.searchbar input {
+    flex: 1 1 auto; min-width: 0;
+    border: 0; background: transparent; outline: none;
+    font-size: 14.5px;
+}
+
+/* 스크린샷만 보고도 픽셀↔좌표 환산이 되게 남기는 표시.
+   route.html 의 #geo 와 같은 목적이고, 사용자 화면이라 기본은 꺼둔다. */
+#geo {
+    position: absolute;
+    right: 8px; bottom: 8px;
+    z-index: 10;
+    background: rgba(255, 255, 255, .92);
+    border: 1px solid #ccc; border-radius: 3px;
+    padding: 3px 7px;
+    font: 11px/1.5 monospace; color: #333; white-space: pre;
+    pointer-events: none;
+}
+
+#geo[hidden] { display: none; }
+
+/* ── 지도 위 표시 ─────────────────────────────────────────
+   기본 Marker 는 클릭을 자기가 먹어서 지도 클릭을 막는다.
+   route.html 과 같은 이유로 전부 CustomOverlay 를 쓴다. */
+.pin {
+    padding: 3px 9px;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+}
+
+/* 공사구간. 화면을 열자마자 깔린다.
+   route.html 과 같은 색·크기다. 두 화면에서 같은 것이 같아 보여야 한다.
+   커서를 올리면 공사명·기간이 뜬다(title 속성). */
+.zone {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #ff9800;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+    cursor: help;
+}
+
+/* 이용자 제보. 공사와 같은 원이고 색으로만 구분한다 — 신호등 색이 곧 통행 가능 여부다.
+   빨강=통행 불가(경로에서 아예 뺀다) · 노랑=고려 · 초록=통행 가능(참고정보).
+   admin.html 과 같은 색을 쓴다. 두 화면에서 같은 것이 같아 보여야 한다.
+
+   공사 주황(#ff9800)과 '고려' 노랑(#f9a825)이 가까운 계열이라는 문제가 남아 있다.
+   모양을 달리하면 사라지지만, 우선 셋 다 점으로 보기로 했다. */
+.rep {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+    cursor: help;
+}
+.rep.high { background: #d32f2f; }
+.rep.mid  { background: #f9a825; }
+.rep.low  { background: #2e7d32; }
+
+/* 안내 문구 안에 박아넣는 제보 점. .zone-key 와 같은 방식이다. */
+.rep-key {
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 1px;
+    border-radius: 50%;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .18);
+    vertical-align: baseline;
+}
+.rep-key.high { background: #d32f2f; }
+.rep-key.mid  { background: #f9a825; }
+.rep-key.low  { background: #2e7d32; }
+
+/* 검색 결과 마커. 패널 목록의 A·B·C 와 같은 글자다. */
+.mk {
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 50% 50% 50% 2px;
+    transform: rotate(-45deg);
+    background: var(--route);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .4);
+    cursor: pointer;
+}
+
+.mk span {
+    transform: rotate(45deg);
+    color: #fff; font-size: 11.5px; font-weight: 800;
+}
+
+.mk.is-picked { background: #0d47a1; width: 28px; height: 28px; }
+
+/* ── 좁은 화면 ─────────────────────────────────────────────
+   데스크톱이 기준이다. 여기서는 레이아웃이 깨지지 않을 만큼만 손본다.
+
+   왼쪽(레일 108 + 패널 372)은 폭이 변해도 크기가 그대로다.
+   창을 줄이거나 늘리면 지도만 줄고 는다 — 전에는 1000px 아래에서 왼쪽도 같이
+   줄었는데, 글자 크기가 화면마다 달라 보여서 없앴다.
+
+   아래 한 곳만 예외다. 760px 밑에서는 왼쪽을 그대로 두면 지도가 설 자리가 없어서
+   세로로 쌓는다. 크기를 줄이는 게 아니라 배치를 바꾸는 것이다. */
+@media (max-width: 760px) {
+    .shell { flex-direction: column; height: auto; min-height: 100%; }
+
+    .rail {
+        flex: 0 0 auto;
+        flex-direction: row;
+        gap: 0; padding: 0;
+        border-right: 0; border-bottom: 1px solid var(--edge);
+    }
+    .rail-tab { flex: 1 1 0; margin: 0; padding: 14px 0; border-radius: 0; }
+
+    /* 가로줄이 되면 '맨 아래'가 없다. 둘을 오른쪽 끝으로 나란히 보낸다.
+       auto 는 앞쪽 하나(.rail-home)에만 — 둘 다 주면 사이가 벌어진다. */
+    .rail-home  { margin: 0 4px 0 auto; align-self: center; width: 36px; height: 36px; }
+    .rail-admin { margin: 0 8px 0 0;    align-self: center; width: 36px; height: 36px; }
+
+    .panel {
+        flex: 0 0 auto;
+        order: 2;
+        border-right: 0; border-top: 1px solid var(--edge);
+        overflow: visible;
+    }
+
+    /* 좁은 화면에서는 지도가 먼저 보여야 한다. 높이를 뷰포트에 맞춰 고정한다. */
+    .map-area { order: 1; flex: 0 0 auto; height: 58vh; min-height: 320px; }
+}
+
+/* ── 정류장 칸 (오른쪽 세로 패널) ───────────────────────────────
+   지도와 가운데 패널 사이에 선다.
+
+   왜 가운데 패널 안이 아닌가: 가운데는 '어디에서 어디로'를 다루는 자리이고,
+   복합 경로가 들어오면 그 자리를 통째로 쓴다. 정류장 조회와 스톱워치는
+   경로가 아니라 도구라, 경로를 정하는 중에도 계속 보여야 한다.
+
+   접을 수 있게 둔 이유: 이 칸까지 서면 1366px 노트북에서 지도가 700px 근처로 준다.
+   접었는지는 localStorage 에 기억한다 — 매번 다시 접게 하면 접는 기능이 짐이 된다. */
+.side {
+    position: relative;              /* 손잡이를 가장자리에 띄우기 위한 기준 */
+    flex: 0 0 var(--side-w);
+    display: flex;
+    background: var(--cream);
+    border-left: 1px solid var(--edge);
+    /* 폭만 부드럽게. 안쪽 내용까지 움직이면 접을 때 글자가 흘러 어지럽다. */
+    transition: flex-basis .18s ease;
+}
+
+/*
+  ★ display 를 박아뒀으므로 [hidden] 만으로는 안 사라진다.
+  이 줄이 없으면 도보 탭에서도 정류장 칸이 그대로 서 있는다 — 실제로 그랬다.
+  같은 함정을 .io 에서 한 번 겪고 적어뒀는데 또 밟았다.
+*/
+.side[hidden] { display: none; }
+
+.side-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 22px 18px 28px;
+}
+
+/*
+  손잡이. 칸의 바깥 가장자리에 <b>작은 탭 모양으로</b> 붙는다.
+
+  세로로 꽉 찬 띠로 만들었다가 바꿨다 — 띠는 칸 폭을 통째로 먹으면서도
+  '누르는 것'으로 보이지 않는다. 가운데 높이에 작게 두면 눈에 걸리는 자리는 하나인데
+  누를 곳이라는 것은 오히려 분명해진다.
+
+  ★ 접힘 상태에서도 남아 있어야 한다 — 접은 뒤 펼 방법이 사라지면
+  사용자는 기능이 없어진 줄 안다. 그래서 이건 .side-body 밖에 있고,
+  칸이 16px 로 줄어도 제자리에 뜬다.
+*/
+.side-handle {
+    position: absolute;
+    right: -24px;                    /* 지도 쪽으로 나온다 */
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+
+    width: 24px; height: 96px;
+    padding: 0;
+    border: 1px solid var(--edge);
+    border-left: 0;
+    border-radius: 0 10px 10px 0;
+    background: var(--cream-deep);
+    color: var(--ink-soft);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 1px 0 4px rgba(0, 0, 0, .08);
+}
+.side-handle:hover { background: var(--edge); color: var(--ink); }
+
+.side-handle-icon {
+    font-size: 22px; line-height: 1;
+    transition: transform .18s ease;
+}
+/* 펼쳐진 상태에서는 '접기'(오른쪽), 접힌 상태에서는 '펴기'(왼쪽)를 가리킨다. */
+.side.is-collapsed .side-handle-icon { transform: rotate(180deg); }
+
+.side.is-collapsed { flex-basis: 24px; }
+.side.is-collapsed .side-body { display: none; }
+
+/* 정류장 칸 안에서는 첫 제목 위 여백이 필요 없다(칸 자체가 이미 떨어져 있다). */
+.side-body .section-title:first-child { margin-top: 0; }
+
+/*
+  좁은 화면에서는 세로로 세울 수 없다. 지도까지 셋이 나란히 서면 셋 다 못 쓴다.
+  밖에서 폰으로 쓰는 것이 실사용이라 여기가 오히려 중요하다.
+  → 칸을 아래로 내려 쌓고, 접기는 그대로 살려 둔다.
+*/
+@media (max-width: 980px) {
+    .shell { flex-wrap: wrap; }
+
+    .side {
+        flex: 1 1 100%;
+        flex-direction: column;
+        border-left: 0;
+        border-top: 1px solid var(--edge);
+        max-height: 46vh;
+    }
+    .side.is-collapsed { flex-basis: auto; max-height: 24px; }
+
+    /* 세로로 쌓이면 손잡이도 아래 가장자리 가운데로 눕는다. */
+    .side-handle {
+        right: auto; left: 50%;
+        top: auto; bottom: -24px;
+        transform: translateX(-50%);
+        width: 96px; height: 24px;
+        border: 1px solid var(--edge);
+        border-top: 0;
+        border-radius: 0 0 10px 10px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .08);
+    }
+    .side-handle-icon { transform: rotate(90deg); }
+    .side.is-collapsed .side-handle-icon { transform: rotate(-90deg); }
+}
+
+/* ── 복합 경로 (걸어서 → 버스 → 걸어서) ──────────────────────
+   ★ '도보만' 안과 버스 안을 같은 모양의 줄로 세운다. 한쪽만 상자에 넣거나 크게 그리면
+   그것이 권하는 답으로 읽힌다. 무엇이 나은지는 그 사람의 사정(날씨·체력·기다림)이 정하는 것이고,
+   화면이 할 일은 둘을 같은 자로 재서 나란히 놓는 것까지다.
+
+   ★ 도보만 줄을 늘 맨 위에 둔다. 버스 시간에는 기다리는 시간이 빠져 있어서, 총 시간으로
+   줄을 세우면 버스가 언제나 이기는 것처럼 보인다. 실제로는 배차가 드문 지역일수록 진다. */
+.plan { margin-bottom: 12px; }
+.plan[hidden] { display: none; }
+
+.plan-title {
+    font-size: 12px; font-weight: 700; letter-spacing: -.2px;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+}
+
+.plan-list { display: flex; flex-direction: column; gap: 8px; }
+
+.plan-row {
+    border: 1px solid var(--edge); border-radius: 8px;
+    padding: 10px 11px;
+    background: var(--cream);
+}
+
+/* 지금 지도에 그려져 있는 안. 어느 줄을 보고 있는지가 지도와 어긋나면 안 된다. */
+.plan-row.is-drawn { border-color: #7fb2a9; box-shadow: 0 0 0 1px #7fb2a9 inset; }
+
+.plan-row-head {
+    display: flex; align-items: baseline; gap: 8px;
+    flex-wrap: wrap;
+}
+
+.plan-kind {
+    font-size: 12px; font-weight: 700;
+    padding: 2px 7px; border-radius: 5px;
+}
+.plan-row.is-walk .plan-kind { background: #e9f4ec; color: #1f5d33; }
+.plan-row.is-bus  .plan-kind { background: #dff0ed; color: #10554b; }
+
+.plan-time {
+    font-size: 19px; font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* '기다리는 시간 별도' 처럼 그 숫자에 붙는 단서. 숫자 옆이 아니면 읽히지 않는다. */
+.plan-tail {
+    font-size: 11px; color: var(--ink-soft);
+    margin-left: auto;
+}
+
+.plan-sum {
+    margin-top: 3px;
+    font-size: 11.5px; line-height: 1.5; color: var(--ink-soft);
+}
+
+/* 구간 세 줄. 도보와 승차의 성격이 다르다는 것을 왼쪽 색 띠로 갈라 놓는다. */
+.plan-legs { margin-top: 7px; display: flex; flex-direction: column; gap: 4px; }
+
+.plan-leg {
+    display: grid; grid-template-columns: 54px 1fr;
+    gap: 8px; align-items: baseline;
+    font-size: 11.5px; line-height: 1.5;
+    padding-left: 7px;
+    border-left: 3px solid #cfd8dc;
+}
+.plan-leg.is-walk { border-left-color: #4c8c5e; }
+.plan-leg.is-bus  { border-left-color: #00897b; }
+
+.plan-leg-time { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.plan-leg-what { color: var(--ink-soft); min-width: 0; }
+
+/*
+  기다리는 시간. ★ 이 줄이 이 화면에서 가장 자주 사람의 행동을 바꾼다 —
+  '지금 나가면 탄다' 와 '나가도 놓친다' 는 정반대의 안내다.
+*/
+.plan-wait {
+    margin-top: 7px; padding-top: 6px;
+    border-top: 1px dashed var(--edge);
+    font-size: 11.5px; line-height: 1.5;
+    color: #1a4a8f;
+}
+.plan-wait.is-miss { color: #a4442f; }
+
+/* 그 숫자가 어디서 왔는지. 어림한 값과 잰 값을 같은 얼굴로 내보내지 않는다. */
+.plan-src {
+    margin-top: 5px;
+    font-size: 10.5px; line-height: 1.5; color: var(--ink-soft);
+}
+
+.plan-go {
+    margin-top: 8px;
+    border: 1px solid #b9cdf0; border-radius: 6px;
+    background: #e7eefc;
+    padding: 5px 10px;
+    font-size: 11.5px; font-weight: 700; color: #1a4a8f;
+}
+.plan-go:hover { background: #d7e3fa; }
+
+/*
+  버스가 근소하게 빠를 때 붙는 단서. 도보만 줄에 다는 이유는, 사용자가 그 줄을 지나쳐
+  아래로 내려가기 전에 읽어야 뜻이 있기 때문이다.
+*/
+.plan-hint {
+    margin-top: 6px; padding-top: 6px;
+    border-top: 1px dashed var(--edge);
+    font-size: 11.5px; line-height: 1.5;
+    color: #7a5b1e;
+}
+
+.plan-note {
+    margin-top: 7px;
+    font-size: 11.5px; line-height: 1.6; color: var(--ink-soft);
+}
+.plan-note[hidden] { display: none; }
+
+/* ── 소요 시간 구간별 ────────────────────────────────────────
+   도보 따로, 버스 따로. 한 숫자로 합치면 어디서 시간이 드는지 알 수 없다.
+
+   ★ 두 구간에 다른 색을 준다. 도보는 그 사람 속도로 늘었다 줄었다 하는 값이고
+   버스에 탄 시간은 누가 타도 같은 값이라, 성격이 다른 둘을 눈으로도 갈라 놓는다. */
+.legs { margin-top: 4px; }
+.legs[hidden] { display: none; }
+
+.leg {
+    display: grid;
+    grid-template-columns: 42px auto 1fr;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 2px;
+    border-top: 1px solid var(--edge);
+}
+.leg:first-child { border-top: 0; }
+
+.leg-label {
+    font-size: 12px; font-weight: 700;
+    padding: 2px 0;
+    text-align: center;
+    border-radius: 5px;
+}
+.leg.is-walk .leg-label { background: #e9f4ec; color: #1f5d33; }
+.leg.is-bus  .leg-label { background: #e7eefc; color: #1a4a8f; }
+
+/* 사용자가 이 줄에서 실제로 읽는 값이라 제일 크다. */
+.leg-time {
+    font-size: 17px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.leg-sub {
+    font-size: 11.5px; line-height: 1.5;
+    color: var(--ink-soft);
+    min-width: 0;
+}
+
+/*
+  합계를 안 내는 이유를 적는 자리. 기다리는 시간이 빠져 있고 버스 구간도
+  '노선 전체' 라, 그럴듯한 합계 하나가 나눠 적은 뜻을 통째로 지운다.
+*/
+.legs-note {
+    margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid var(--edge);
+    font-size: 11px; line-height: 1.6;
+    color: var(--ink-soft);
+}
+
+/* ── 재는 구간 (정류장 칸) ───────────────────────────────────
+   출발 위치와 정류장을 이 자리에서 정한다.
+
+   왜 여기에도 두나: 스톱워치를 누르는 사람은 이 칸을 보고 있는데, 출발지를 안 정했으면
+   여기서 '시간만 남습니다' 라는 말을 듣는다. 고칠 곳이 화면 반대편에만 있으면
+   그 말이 막다른 길이 된다.
+
+   복합 경로가 붙으면 이 줄이 그대로 첫 도보 구간(집 → 탈 정류장)이 된다. */
+.seg {
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: var(--cream-deep);
+}
+
+.seg-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 3px 0;
+}
+
+/* 출발·정류장을 색으로 가른다. 지도의 출발 핀(초록)과 같은 초록을 쓴다 — 눈이 이어져야 한다. */
+.seg-tag {
+    flex: 0 0 auto;
+    min-width: 40px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 10.5px; font-weight: 700;
+    text-align: center;
+}
+.seg-tag.is-start { background: #e9f4ec; color: #1f5d33; }
+.seg-tag.is-stop  { background: #e7eefc; color: #1a4a8f; }
+
+.seg-name {
+    flex: 1 1 auto; min-width: 0;
+    font-size: 13px;
+    /* 정류장 이름이 길면 줄이 밀린다. 잘라내고 버튼 자리를 지킨다. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 아직 안 정한 자리. 값처럼 보이면 정한 줄 안다. */
+.seg-name.is-empty { color: var(--ink-soft); }
+
+.seg-set {
+    flex: 0 0 auto;
+    border: 1px solid var(--edge); border-radius: 5px;
+    background: #fff;
+    padding: 3px 7px;
+    font-size: 11px; color: var(--ink-soft);
+    white-space: nowrap;
+}
+.seg-set:hover { background: var(--cream); color: var(--ink); }
+
+.seg-info {
+    margin-top: 7px; padding-top: 7px;
+    border-top: 1px solid var(--edge);
+    font-size: 12px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+/* 아직 못 내는 값. 무엇이 모자란지 적는 자리라 굵게 두지 않는다. */
+.seg-info.is-empty { font-weight: 400; color: var(--ink-soft); }
+
+/* ── 걸어가서 '탈 수 있는' 정류장 제안 ────────────────────────
+   가까운 정류장에 저상이 안 서면 휠체어 사용자에게는 없는 정류장이나 마찬가지다.
+   그걸 사람이 직접 가려내야 했던 것이 문제였다. */
+.seg-tip {
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    margin-top: 7px; padding-top: 7px;
+    border-top: 1px dashed var(--edge);
+}
+.seg-tip[hidden] { display: none; }
+
+.seg-tip-msg {
+    flex: 1 1 auto; min-width: 0;
+    font-size: 11.5px; line-height: 1.5;
+    color: #1a4a8f;
+}
+
+.seg-tip-go {
+    flex: 0 0 auto;
+    border: 1px solid #b9cdf0; border-radius: 5px;
+    background: #e7eefc;
+    padding: 3px 8px;
+    font-size: 11px; font-weight: 700; color: #1a4a8f;
+    white-space: nowrap;
+}
+.seg-tip-go:hover { background: #d7e3fa; }

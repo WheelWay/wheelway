@@ -9,7 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WheelWay</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/main.css?v=20260819-27" rel="stylesheet">
+    <link href="/css/main.css?v=20260820-1" rel="stylesheet">
 </head>
 <body class="main-body">
 <main class="main-shell">
@@ -32,7 +32,7 @@
             <h1>휠체어 이동을 위한<br>더 편안한 길찾기</h1>
             <p class="hero-description">내게 맞는 이동 수단을 선택하고, 편안한 이동을 시작해 보세요.</p>
             <div class="hero-actions">
-                <button class="hero-primary-button" type="button" data-service="지도">휠체어 길찾기 시작</button>
+                <a class="hero-primary-button" href="/map.html">휠체어 길찾기 시작</a>
                 <a class="hero-secondary-link" href="#service-area">이동 서비스 둘러보기</a>
             </div>
         </div>
@@ -58,16 +58,27 @@
             <p>휠체어 이동에 맞는 길찾기와 교통수단 정보를 한곳에서 확인할 수 있어요.</p>
             <span class="journey-card-chip">휠체어 친화 이동</span>
         </aside>
+        <!--
+          ★ 셋 다 <a href> 다. 세 기능이 전부 열렸으므로 '준비 중' 장치는 걷어냈다.
+
+          이 자리는 네 번 깨졌다 — 화면을 새로 그릴 때마다 <button> 으로 돌아왔고,
+          그때마다 '준비 중입니다' 알림이 먼저 떠서 /map.html 로 넘어가지 못했다.
+          나중에 기능을 더 붙이더라도 <button> + 클릭 가로채기로 만들지 말 것.
+          한 화면(map.html) 안에서 탭만 갈리는 구조라 링크 하나면 끝난다.
+
+            지도  /map.html            버스  /map.html?tab=bus
+            택시  /map.html?tab=taxi
+        -->
         <div id="service-area" class="transport-menu">
-            <button class="transport-button" type="button" data-service="지도">
+            <a class="transport-button" href="/map.html">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
                     <path d="M6 12l17-6 18 6 17-6v46l-17 6-18-6-17 6V12z"/>
                     <path d="M23 6v46M41 12v46"/>
                 </svg>
                 <span class="transport-label">지도</span>
                 <span class="transport-description">휠체어 이동 경로를 확인해요</span>
-            </button>
-            <button class="transport-button" type="button" data-service="버스">
+            </a>
+            <a class="transport-button" href="/map.html?tab=bus">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
                     <path d="M10 17c0-5 4-9 9-9h25c5 0 10 4 10 9v25H10V17z"/>
                     <path d="M10 31h44M18 9v22M46 9v22M10 42h44v8H10z"/>
@@ -75,8 +86,8 @@
                 </svg>
                 <span class="transport-label">버스</span>
                 <span class="transport-description">저상버스 정보를 찾아봐요</span>
-            </button>
-            <button class="transport-button" type="button" data-service="택시">
+            </a>
+            <a class="transport-button" href="/map.html?tab=taxi">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
                     <path d="M9 30l7-13h32l7 13v21H9V30z"/>
                     <path d="M21 17l5-8h12l5 8M9 36h46M18 43h10M36 43h10"/>
@@ -85,7 +96,7 @@
                 </svg>
                 <span class="transport-label">택시</span>
                 <span class="transport-description">편안한 택시 이동을 준비해요</span>
-            </button>
+            </a>
         </div>
         <p id="serviceNotice" class="service-notice is-visible" role="status" aria-live="polite">서비스 선택 · 원하는 이동 서비스를 선택해 주세요.</p>
     </section>
@@ -163,13 +174,11 @@
     </div>
 </div>
 <script>
-    const serviceNotice = document.getElementById('serviceNotice');
-    document.querySelectorAll('[data-service]').forEach(button => {
-        button.addEventListener('click', () => {
-            serviceNotice.textContent = button.dataset.service + ' 서비스는 현재 준비 중입니다.';
-            serviceNotice.classList.add('is-visible');
-        });
-    });
+    /*
+      '준비 중' 알림은 걷어냈다. 지도·버스·택시가 전부 열려서 잡을 것이 없다 —
+      남겨두면 링크를 가로채는 코드만 남아 다음 사람이 또 여기에 걸린다.
+      아래 안내 줄(#serviceNotice)은 그대로 둔다. 무엇을 고르라는 말이지 상태 표시가 아니다.
+    */
 
     const loginModal = document.getElementById('loginModal');
     const loginModalCard = document.querySelector('.login-modal-card');
