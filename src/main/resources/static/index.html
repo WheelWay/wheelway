@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>휠체어 이동경로 서비스</title>
+    <style>
+        body { margin: 0; padding: 40px 24px; font-family: "맑은 고딕", sans-serif;
+               background: #f7f7f8; color: #222; }
+        .wrap { max-width: 720px; margin: 0 auto; }
+        h1 { font-size: 20px; margin: 0 0 4px; }
+        .meta { color: #666; font-size: 13px; margin-bottom: 24px; }
+        a.card { display: block; text-decoration: none; color: inherit;
+                 background: #fff; border: 1px solid #e3e3e3; border-radius: 8px;
+                 padding: 16px 18px; margin-bottom: 10px; }
+        a.card:hover { border-color: #1565c0; }
+        a.card b { display: block; font-size: 15px; color: #1565c0; margin-bottom: 3px; }
+        a.card span { font-size: 13px; color: #555; }
+        .note { margin-top: 22px; font-size: 12px; color: #888; line-height: 1.7; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>휠체어 이동경로 서비스</h1>
+    <!-- 루트로 들어왔을 때 404 가 나지 않게 두는 안내 페이지다. 기능은 없다. -->
+    <div class="meta" id="meta">…</div>
+
+    <a class="card" href="/map.html">
+        <b>이동경로 찾기 (사용자 화면)</b>
+        <span>장소를 검색해 출발·도착을 정하고 경로를 본다. 도보 고정</span></a>
+
+    <a class="card" href="/route.html">
+        <b>경로 확인 (카카오) — 검증용</b>
+        <span>출발·도착을 찍어 경로를 본다. 공사구간·차단 엣지·계단·그래프 오버레이 토글</span></a>
+
+    <a class="card" href="/admin.html">
+        <b>공사구간 수정 · 엣지 직접 수정</b>
+        <span>지오코딩 좌표 보정, 기준선 그리기, 엣지·노드 추가/삭제</span></a>
+
+    <a class="card" href="/route-naver.html">
+        <b>경로 확인 (네이버)</b>
+        <span>카카오와 비교용. 지오코딩은 카카오로 확정됐고 이 화면은 잔재다</span></a>
+
+    <div class="note">
+        지역은 <code>wheelway.region-id</code> 한 줄로 갈아탄다(재적재 불필요).
+        바꾼 뒤에는 서버를 다시 띄워야 한다.
+    </div>
+</div>
+
+<script>
+    fetch('/api/config').then(r => r.json()).then(c => {
+        document.getElementById('meta').textContent =
+            `${c.regionId} · 노드 ${c.nodeCount.toLocaleString()}`
+            + ` · 엣지 ${c.edgeCount.toLocaleString()} · 차단 ${c.blockedCount.toLocaleString()}`;
+    }).catch(() => {
+        document.getElementById('meta').textContent = '서버 정보를 읽지 못했습니다.';
+    });
+</script>
+</body>
+</html>

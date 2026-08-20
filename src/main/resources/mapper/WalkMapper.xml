@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  실제 이동 기록. 개인 속도 학습의 원본이다.
+
+  ROUTE_SEARCH_LOGS 와 헷갈리지 말 것 — 그쪽 DURATION_MS 는 서버 계산 시간(ms)이고,
+  여기 ELAPSED_SEC 는 사람이 실제로 이동한 시간(초)이다.
+
+  속도는 컬럼이 아니다. DISTANCE_M 과 두 시각으로 SQL 에서 계산해 내려준다.
+-->
+<mapper namespace="kopo.poly.mapper.IWalkMapper">
+
+    <!--
+      ELAPSED_SEC 를 SQL 에서 만든다. 자바에서 두 문자열을 다시 파싱하는 왕복을 없애려는 것이고,
+      DB 시계 하나로 계산이 통일된다는 이점도 있다.
+
+      날짜를 문자열로 뽑는 것은 화면에 그대로 찍기 위해서다(다른 매퍼와 같은 방식).
+    -->
+    <sql id="columns">
+        ID
+             , REGION_ID
+             , USERNAME
+             , START_LAT
+             , START_LNG
+             , END_LAT
+             , END_LNG
+             , DISTANCE_M
+             , STOP_NAME
+             , EXCLUDED_YN
+             , TIMESTAMPDIFF(SECOND, STARTED_AT, ARRIVED_AT)      AS ELAPSED_SEC
+             , DATE_FORMAT(STARTED_AT, '%Y-%m-%d %H:%i')          AS STARTED_AT
+             , DATE_FORMAT(ARRIVED_AT, '%Y-%m-%d %H:%i')          AS ARRIVED_AT
+             , DATE_FORMAT(CREATED_AT, '%Y-%m-%d %H:%i')          AS CREATED_AT
+    </sql>
+
+    <!--
+      한 정류장까지 잰 기록만.
+
+      ★ = 가 아니라 <=> (널 안전 비교)다. 정류장을 안 고르고 잰 기록은 STOP_NAME 이 NULL 인데,
+        = 로 비교하면 NULL = NULL 이 참이 아니라 UNKNOWN 이라 한 건도 안 나온다.
+        '정류장 미지정'도 하나의 묶음이라 같이 나와야 한다.
+
+      IDX_WALK_STOP (USERNAME, STOP_NAME) 이 이 조회를 위한 것이다.
+    -->
+    <select id="getRecords" resultType="WalkRecordDTO">
+        SELECT <include refid="columns"/>
+          FROM WALK_RECORDS
+         WHERE USERNAME  = #{username}
+           AND STOP_NAME &lt;=&gt; #{stopName}
+         ORDER BY ID DESC
+    </select>
+
+    <!--
+      안내 계산에 쓸 것만.
+
+      minSec/maxSec 로 거르는 이유
+        [시작]을 누르고 곧바로 [도착]을 누른 기록은 소요시간이 0 에 가깝고,
+        눌러놓고 잊은 채 다음 날 누른 기록은 터무니없이 길다. 둘 다 중앙값을 흔든다.
+
+      ★ 거리로 거르지 않는다
+        위치를 켜지 않고 잰 기록은 DISTANCE_M 이 NULL 인데, 그것도 '몇 분 걸렸나'는
+        멀쩡히 알려준다. 그리고 안내에 실제로 쓰는 값이 바로 그 시간이다.
+        거리가 필요한 계산(m/분)은 서비스가 NULL 인 행을 걸러서 따로 한다.
+
+      정렬은 소요시간 기준이다. 중앙값을 집기만 하면 되도록 SQL 이 세워 준다.
+    -->
+    <select id="getUsableRecords" resultType="WalkRecordDTO">
+        SELECT <include refid="columns"/>
+          FROM WALK_RECORDS
+         WHERE USERNAME    = #{username}
+           AND EXCLUDED_YN = 'N'
+           AND TIMESTAMPDIFF(SECOND, STARTED_AT, ARRIVED_AT) BETWEEN #{minSec} AND #{maxSec}
+         ORDER BY TIMESTAMPDIFF(SECOND, STARTED_AT, ARRIVED_AT)
+    </select>
+
+    <insert id="insertRecord" parameterType="WalkRecordDTO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO WALK_RECORDS
+            (REGION_ID, USERNAME, START_LAT, START_LNG, END_LAT, END_LNG,
+             DISTANCE_M, STOP_NAME, STARTED_AT, ARRIVED_AT)
+        VALUES
+            (#{regionId}, #{username}, #{startLat}, #{startLng}, #{endLat}, #{endLng},
+             #{distanceM}, #{stopName}, #{startedAt}, #{arrivedAt})
+    </insert>
+
+    <!--
+      USERNAME 을 조건에 같이 넣는다. ID 만으로 고치면 남의 기록을 건드릴 수 있다.
+      영향 행이 0 이면 '없는 ID' 와 '남의 기록' 이 구분되지 않는데, 그 구분을
+      화면에 알려줄 이유가 없어서(있는지 없는지 자체가 정보다) 그대로 둔다.
+    -->
+    <update id="updateExcluded">
+        UPDATE WALK_RECORDS
+           SET EXCLUDED_YN = #{excludedYn}
+         WHERE ID       = #{id}
+           AND USERNAME = #{username}
+    </update>
+
+    <!--
+      아주 지운다. 빼기(EXCLUDED_YN)와 쓰임이 다르다 —
+      [도착] 누르는 걸 잊어 1시간이 찍힌 것은 이동 기록이 아니라서 남겨둘 이유가 없다.
+
+      USERNAME 을 조건에 같이 넣는 것이 여기서는 특히 중요하다.
+      ID 만으로 지우면 남의 기록을 지울 수 있고, 지운 것은 되돌아오지 않는다.
+    -->
+    <delete id="deleteRecord">
+        DELETE FROM WALK_RECORDS
+         WHERE ID       = #{id}
+           AND USERNAME = #{username}
+    </delete>
+
+</mapper>

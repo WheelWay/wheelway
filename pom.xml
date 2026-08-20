@@ -11,6 +11,12 @@
     <groupId>kopo</groupId>
     <artifactId>wheelway</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <!--
+      JSP 를 쓰려고 war 로 바꿨다(2026-08-13).
+      src/main/webapp 은 war 패키징에서만 결과물에 담긴다. jar 로 두면 JSP 가 통째로 빠진다.
+      개발 실행(spring-boot:run · run-dev.cmd)은 war 로 바꿔도 그대로 동작한다.
+      외부 톰캣 배포에 대비해 WheelwayApplication 이 SpringBootServletInitializer 를 상속한다.
+    -->
     <packaging>war</packaging>
     <name>wheelway</name>
     <description>wheelway</description>
@@ -33,16 +39,27 @@
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>4.0.1</version>
+        </dependency>
+
+        <!--
+          JSP 해석기. 이게 없으면 뷰 이름이 경로로 해석돼 Circular view path 500 이 난다.
+        -->
         <dependency>
             <groupId>org.apache.tomcat.embed</groupId>
             <artifactId>tomcat-embed-jasper</artifactId>
         </dependency>
+
+        <!--
+          JSTL. newPassword / newPasswordResult / searchUserIdResult 세 화면이
+          <c:if> 등을 쓴다(uri="jakarta.tags.core").
+          api 만 넣으면 태그를 못 읽는다 — 실제 구현(glassfish)까지 있어야 한다.
+        -->
         <dependency>
             <groupId>jakarta.servlet.jsp.jstl</groupId>
             <artifactId>jakarta.servlet.jsp.jstl-api</artifactId>
@@ -50,11 +67,6 @@
         <dependency>
             <groupId>org.glassfish.web</groupId>
             <artifactId>jakarta.servlet.jsp.jstl</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>4.0.1</version>
         </dependency>
 
         <dependency>
@@ -73,11 +85,13 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 도로굴착 크롤러(tool) 전용 - HTML 요청/파싱 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation-test</artifactId>
-            <scope>test</scope>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.1</version>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>

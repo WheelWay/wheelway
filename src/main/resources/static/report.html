@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>장애물 제보</title>
+    <!--
+      사용자용 제보 화면.
+
+      골격은 admin.html 과 같다(왼쪽 패널 · 오른쪽 상자 · 지도). 같은 일을 하는 화면이
+      둘로 갈리면 배우는 것도 둘이 되므로 일부러 맞췄다.
+
+      다른 점은 '뺀 것'뿐이다.
+        - 공사구간 수정, 엣지 직접 수정, 기준선  → 전부 없다. 관리자의 일이다
+        - 확정 / 반려 / 해소                    → 없다. 판정은 관리자가 한다
+        - 기존 제보의 좌표·반경 수정             → 없다. 목록을 누르면 그 자리로 지도만 옮긴다
+
+      남은 것은 하나다 — 제보를 새로 올리는 것.
+    -->
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; font-family: "맑은 고딕", sans-serif; }
+        #map { width: 100%; height: 100%; }
+
+        #panel {
+            position: absolute; top: 12px; left: 12px; z-index: 10;
+            width: 300px; padding: 14px 16px;
+            background: rgba(255, 255, 255, .96);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 13px; line-height: 1.6;
+        }
+        #panel h1 { margin: 0 0 8px; font-size: 15px; }
+        #panel .hint { color: #555; margin-bottom: 10px; }
+        #panel label { display: block; cursor: pointer; }
+        #panel a { color: #1565c0; font-size: 12px; }
+
+        #status { padding: 6px 8px; border-radius: 5px; margin-bottom: 8px; }
+        .ok   { background: #e8f5e9; color: #1b5e20; }
+        .fail { background: #ffebee; color: #b71c1c; }
+        .wait { background: #f2f2f2; color: #555; }
+
+        .legend i { display: inline-block; width: 22px; height: 4px; vertical-align: middle; margin-right: 6px; }
+        .row { display: flex; justify-content: space-between; }
+        .row span:last-child { font-weight: bold; }
+        hr { border: 0; border-top: 1px solid #e3e3e3; margin: 10px 0; }
+
+        /* 공사구간. 지도에 같이 깔린다 — 제보할 자리를 찾을 때 '이미 알려진 곳'이 보여야
+           같은 곳을 또 올리지 않는다. 끄고 켜는 것은 관리자 화면의 몫이라 토글은 두지 않는다. */
+        .zone {
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #ff9800; border: 2px solid #fff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+            cursor: help;
+        }
+
+        /* 제보. 신호등 색이 곧 통행 가능 여부다. admin.html · map.html 과 같은 색을 쓴다. */
+        .rep {
+            width: 13px; height: 13px; border-radius: 50%;
+            border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+            cursor: help;
+        }
+        .rep.high { background: #d32f2f; }
+        .rep.mid  { background: #f9a825; }
+        .rep.low  { background: #2e7d32; }
+
+        /* 지금 찍고 있는 자리. 기본 반경 5m 는 축척에 따라 1~2px 이라
+           원만으로는 클릭이 먹었는지조차 알 수 없다. */
+        .rep.picking {
+            width: 17px; height: 17px; border: 3px solid #fff;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .5);
+        }
+
+        #editor {
+            position: absolute; top: 12px; right: 12px; z-index: 10;
+            width: 320px; padding: 14px 16px;
+            background: rgba(255, 255, 255, .97);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 13px; line-height: 1.6;
+        }
+        #editor h2 { margin: 0 0 6px; font-size: 14px; }
+        #editor .name { font-weight: bold; margin-bottom: 2px; }
+        #editor .sub { color: #666; font-size: 12px; margin-bottom: 10px; }
+        #editor input[type=range] { width: 100%; }
+        #editor select, #editor textarea { width: 100%; font: inherit; font-size: 12px; }
+        #editor textarea { height: 44px; resize: vertical; }
+        #editor .btns { display: flex; gap: 6px; margin-top: 10px; }
+        #editor button { flex: 1; padding: 7px; cursor: pointer;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 5px; font-size: 13px; }
+        #editor button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
+
+        /* 정도 3택. 라디오를 버튼처럼 보이게 한다 — 셋 중 하나라는 것이 한눈에 보여야 한다. */
+        .rp-sev { display: flex; gap: 4px; margin: 2px 0 8px; }
+        .rp-sev label { flex: 1; text-align: center; font-size: 11px; line-height: 1.3;
+            padding: 4px 2px; border: 1px solid #c4c4c4; border-radius: 5px; cursor: pointer; }
+        .rp-sev input { display: none; }
+        .rp-sev label.low:has(input:checked)  { border-color: #2e7d32; color: #2e7d32; background: #e8f5e9; font-weight: bold; }
+        .rp-sev label.mid:has(input:checked)  { border-color: #f9a825; color: #a06800; background: #fff8e1; font-weight: bold; }
+        .rp-sev label.high:has(input:checked) { border-color: #d32f2f; color: #d32f2f; background: #ffebee; font-weight: bold; }
+
+        /* 사용자 화면은 미터를 직접 묻지 않는다. 눈에 보이는 크기를 고르게 한다. */
+        .rp-preset { display: flex; gap: 4px; margin-top: 4px; }
+        .rp-preset button { flex: 1; font-size: 11px; padding: 3px 2px; }
+        .rp-preset button.on { border-color: #1565c0; color: #1565c0; background: #e8f0fb; font-weight: bold; }
+
+        #rp-list { max-height: 170px; overflow-y: auto; margin-top: 6px; font-size: 12px; }
+        #rp-list div.row-r { padding: 3px 4px; cursor: pointer; border-radius: 4px;
+            display: flex; justify-content: space-between; gap: 6px; }
+        #rp-list div.row-r:hover { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <h1>장애물 제보</h1>
+    <div class="hint">
+        지나갈 수 없거나 조심해야 할 곳을 알려주세요.<br>
+        <a href="/map.html">← 이동경로 화면으로</a>
+    </div>
+
+    <div id="status" class="wait">지도를 불러오는 중…</div>
+
+    <label class="legend"><input type="checkbox" id="t-report" checked>
+        <i style="background:#d32f2f"></i><i style="background:#f9a825"></i><i style="background:#2e7d32"></i>
+        제보 <span id="c-report"></span></label>
+    <div class="hint" style="margin-left:22px; color:#888; font-size:11px">
+        빨강=통행 불가 · 노랑=고려 · 초록=통행 가능.<br>
+        <span style="color:#ff9800">●</span> 주황은 공사 중인 곳입니다.</div>
+
+    <!--
+      로그인 상태를 먼저 보여준다. 제보는 USERS 로 FK 가 걸려 있어 비로그인이면 반드시 거절되는데,
+      눌러보기 전까지 알 수 없으면 '올렸는데 아무 일도 안 일어난다'로 보인다.
+    -->
+    <div id="r-login" style="font-size:12px; margin:4px 0 6px; padding:5px 7px; border-radius:5px"></div>
+
+    <label class="legend" style="margin-top:4px">
+        <input type="checkbox" id="r-add"> <b>제보 등록</b> — 지도를 클릭해 위치 찍기</label>
+    <div class="hint" id="r-hint" style="color:#666; font-size:12px; margin-bottom:0">
+        켜고 지도를 클릭하면 그 자리에 제보를 올립니다.</div>
+
+    <hr>
+    <div style="font-weight:bold; margin-bottom:2px">올라온 제보</div>
+    <div class="hint" style="color:#888; font-size:11px; margin-bottom:0">
+        누르면 그 자리로 지도를 옮깁니다.</div>
+    <div id="rp-list"></div>
+
+    <hr>
+    <div id="meta" style="color:#666; font-size:12px"></div>
+</div>
+
+<div id="editor">
+    <h2>새 제보</h2>
+
+    <div id="rp-detail" style="display:none">
+        <div class="sub" id="rp-sub">지도를 클릭해 위치를 찍으세요.</div>
+
+        <div style="font-size:12px; color:#555">정도</div>
+        <div class="rp-sev">
+            <label class="low"><input type="radio" name="rsev" value="낮음">통행 가능<br>낮음</label>
+            <label class="mid"><input type="radio" name="rsev" value="보통">고려<br>보통</label>
+            <label class="high"><input type="radio" name="rsev" value="높음" checked>통행 불가<br>높음</label>
+        </div>
+        <div class="sub" id="rp-sev-hint" style="margin-top:-4px"></div>
+
+        <div style="font-size:12px; color:#555">유형</div>
+        <select id="rp-type">
+            <option>턱</option>
+            <option>계단</option>
+            <option>적치물</option>
+            <option>기타</option>
+        </select>
+
+        <div style="font-size:12px; color:#555; margin-top:6px">설명 (선택, 500자)</div>
+        <textarea id="rp-desc" placeholder="예) 보도 위에 공사 자재가 쌓여 있어 지나갈 수 없습니다."></textarea>
+
+        <div class="row" style="margin-top:8px"><span>얼마나 막혀 있나요?</span><span id="rp-radius-label">-</span></div>
+        <!--
+          자주 쓰는 세 크기를 버튼으로 두고, 그 사이 값은 슬라이더로 맞춘다.
+          버튼만 있으면 '7m 쯤'인 장애물을 5 나 15 로 반올림해야 하고,
+          슬라이더만 있으면 처음 쓰는 사람이 몇 m 인지 감을 잡을 수 없다.
+        -->
+        <div class="rp-preset">
+            <button type="button" data-m="5">여기 한 곳<br>턱·볼라드</button>
+            <button type="button" data-m="15">이 구간<br>적치물·자재</button>
+            <button type="button" data-m="30">넓게<br>보도 전체</button>
+        </div>
+        <input type="range" id="rp-radius" min="1" max="30" step="1" value="5"
+               aria-label="막힌 범위(m)">
+        <div class="sub" style="display:flex; justify-content:space-between;
+             color:#999; font-size:11px; margin:-4px 0 0">
+            <span>1m</span><span>30m</span></div>
+
+        <div class="row" style="margin-top:8px"><span>막히는 보도</span><span id="rp-count">-</span></div>
+        <div class="sub" id="rp-hint">지도를 클릭하면 위치가 정해집니다.</div>
+
+        <div class="btns">
+            <button class="primary" id="rp-save">등록</button>
+            <button id="rp-cancel">취소</button>
+        </div>
+        <!-- 결과를 버튼 바로 아래에 둔다. 왼쪽 상태줄에만 띄우면 누르는 곳과 멀어서 안 보인다. -->
+        <div id="rp-msg" style="display:none; margin-top:6px; padding:5px 7px;
+             border-radius:5px; font-size:12px"></div>
+    </div>
+
+    <div id="rp-idle" class="sub">
+        왼쪽에서 <b>[제보 등록]</b> 을 켜고 지도를 클릭하세요.
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    /*
+      지도를 처음 띄울 자리.
+
+      ★ 좌표를 박아두지 않는다. region-id 를 보은으로 바꾸면 서버가 주는 bounds 도 같이
+      바뀌는데, 중심만 시청에 남아 있으면 열자마자 <b>데이터가 없는 곳</b>이 뜬다.
+      사용자 화면(map.js)에서 먼저 겪었고, 이 화면들도 같은 상태로 남아 있었다.
+
+      아래 값은 bounds 를 못 받았을 때만 쓰는 마지막 수단이다.
+    */
+    const CENTER_FALLBACK = [37.5663, 126.9779];   // 서울시청
+    let serviceBounds = null;                      // /api/config 가 준다
+
+    function initialCenter() {
+        if (!serviceBounds) {
+            return CENTER_FALLBACK;
+        }
+        const [minLat, minLng, maxLat, maxLng] = serviceBounds;
+        return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+    }
+
+    let map;
+    let defaultRadiusM = 5;
+    let loginId = '';
+
+    let reportData = [];
+    let reportOverlays = [];   // 제보 점 { id, dot, el }
+    let zoneOverlays = [];     // 공사 점
+
+    let rpOn = false;          // 등록 모드
+    let rpPos = null;          // 찍은 위치
+    let rpRadius = null;       // null 이면 전역값
+    let rpPreview = [];
+    let rpCircle = null;
+    let rpMarker = null;
+
+    /** 차단에 관여하는 상태. 반려·해소는 사용자에게 보여줄 이유가 없어 그리지 않는다. */
+    const LIVE = ['대기', '공개'];
+
+    const $ = (id) => document.getElementById(id);
+    const sevColor = (s) => s === '높음' ? '#d32f2f' : s === '보통' ? '#f9a825' : '#2e7d32';
+    const sevClass = (s) => s === '높음' ? 'high' : s === '보통' ? 'mid' : 'low';
+    const severityValue = () => document.querySelector('input[name="rsev"]:checked').value;
+
+    function setStatus(text, cls) {
+        const el = $('status');
+        el.textContent = text;
+        el.className = cls;
+    }
+
+    async function boot() {
+        const cfg = await fetch('/api/config').then(r => r.json());
+
+        if (!cfg.kakaoJsKey) {
+            setStatus('카카오 JavaScript 키가 없습니다.', 'fail');
+            return;
+        }
+
+        // ★ 지도를 만들기 전에 받아둬야 한다. initMap 은 SDK onload 뒤라 늘 이보다 늦다.
+        serviceBounds = cfg.bounds;
+        defaultRadiusM = cfg.defaultRadiusM;
+        showMeta(cfg);
+
+        const s = document.createElement('script');
+        s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${cfg.kakaoJsKey}&autoload=false`;
+        s.onerror = () => setStatus('지도 SDK 를 불러오지 못했습니다.', 'fail');
+        s.onload = () => kakao.maps.load(initMap);
+        document.head.appendChild(s);
+    }
+
+    async function initMap() {
+        map = new kakao.maps.Map($('map'), {
+            center: new kakao.maps.LatLng(...initialCenter()),
+            level: 5
+        });
+
+        kakao.maps.event.addListener(map, 'click', (e) => onMapClick(e.latLng));
+
+        // 지도가 화면에 안 보이는 상태에서 만들어지면 카카오가 컨테이너를 0 으로 잡고
+        // 오버레이를 하나도 그리지 않는다. 크기가 잡히는 순간 다시 그리게 한다.
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => map.relayout()).observe($('map'));
+        }
+
+        await loadConstruction();
+        await loadReports();
+        setStatus('[제보 등록] 을 켜고 지도를 클릭하세요.', 'wait');
+    }
+
+    /** 등록 모드일 때만 지도 클릭을 받는다. 꺼져 있으면 지도를 옮기려다 잘못 눌릴 일이 없다. */
+    function onMapClick(latLng) {
+        if (!rpOn) {
+            return;
+        }
+        rpPos = latLng;
+        refreshPreview();
+    }
+
+    // ── 오버레이 ────────────────────────────────────────────
+
+    async function loadConstruction() {
+        zoneOverlays.forEach(o => o.setMap(null));
+        zoneOverlays = [];
+
+        let zones;
+        try {
+            zones = await fetch('/api/overlay/construction').then(r => r.json());
+        } catch (e) {
+            return;   // 곁들이라 실패해도 제보는 올릴 수 있어야 한다
+        }
+
+        zones.forEach(z => {
+            const el = document.createElement('div');
+            el.className = 'zone';
+            el.title = `${z.name}\n${z.endDate ? z.endDate + ' 까지' : '종료일 미정'} 통행 불가`;
+            zoneOverlays.push(new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(z.latitude, z.longitude),
+                content: el, zIndex: 2, map: map
+            }));
+        });
+    }
+
+    async function loadReports() {
+        reportOverlays.forEach(o => o.dot.setMap(null));
+        reportOverlays = [];
+
+        reportData = await fetch('/api/report').then(r => r.json());
+
+        reportData.filter(r => LIVE.includes(r.status)).forEach(r => {
+            const el = document.createElement('div');
+            el.className = 'rep ' + sevClass(r.severity);
+            // 제보자 아이디는 넣지 않는다. 누구나 보는 화면에서 드러날 이유가 없다.
+            el.title = `${r.severity} · ${r.obstacleType}`
+                + (r.description ? `\n${r.description}` : '')
+                + `\n${r.reportedAt} 제보`;
+
+            const dot = new kakao.maps.CustomOverlay({
+                position: new kakao.maps.LatLng(r.latitude, r.longitude),
+                content: el, zIndex: 3, map: map
+            });
+            reportOverlays.push({ id: r.id, dot, el });
+        });
+
+        $('c-report').textContent = `(${reportOverlays.length}건)`;
+        applyReportOverlays();
+        buildList();
+    }
+
+    function applyReportOverlays() {
+        const on = $('t-report').checked;
+        reportOverlays.forEach(o => o.dot.setMap(on ? map : null));
+    }
+
+    /** 목록은 보기 전용이다. 눌러도 고쳐지지 않고 그 자리로 지도만 옮긴다. */
+    function buildList() {
+        const box = $('rp-list');
+        const rows = reportData.filter(r => LIVE.includes(r.status));
+        box.innerHTML = rows.length ? '' : '<span style="color:#888">아직 올라온 제보가 없습니다.</span>';
+
+        rows.forEach(r => {
+            const row = document.createElement('div');
+            row.className = 'row-r';
+            row.innerHTML = `<span style="color:${sevColor(r.severity)}">●</span>`
+                + `<span style="flex:1">${escapeHtml(r.obstacleType)}`
+                + ` <span style="color:#888">${escapeHtml(r.severity)}</span></span>`
+                + `<span style="color:#888">${escapeHtml(r.reportedAt.slice(5, 10))}</span>`;
+            row.title = r.description || '';
+            row.addEventListener('click', () => {
+                map.setCenter(new kakao.maps.LatLng(r.latitude, r.longitude));
+                if (map.getLevel() > 3) map.setLevel(3);
+            });
+            box.appendChild(row);
+        });
+    }
+
+    // ── 등록 ────────────────────────────────────────────────
+
+    function startNew() {
+        rpOn = true;
+        rpPos = null;
+        rpRadius = null;
+
+        $('rp-desc').value = '';
+        $('rp-type').value = '턱';
+        document.querySelector('input[name="rsev"][value="높음"]').checked = true;
+        setRadius(defaultRadiusM);
+        $('rp-count').textContent = '-';
+        $('rp-hint').textContent = '지도를 클릭하면 위치가 정해집니다.';
+        $('rp-msg').style.display = 'none';
+
+        $('rp-detail').style.display = 'block';
+        $('rp-idle').style.display = 'none';
+        updateSevHint();
+        setStatus('제보할 자리를 지도에서 클릭하세요.', 'wait');
+    }
+
+    function closeNew() {
+        rpOn = false;
+        rpPos = null;
+        clearPreview();
+        $('r-add').checked = false;
+        $('rp-detail').style.display = 'none';
+        $('rp-idle').style.display = 'block';
+    }
+
+    /**
+     * 반경을 정한다. 버튼과 슬라이더 어느 쪽으로 바꾸든 여기 하나를 지난다 —
+     * 둘이 따로 놀면 '버튼은 15m 인데 슬라이더는 7m' 같은 상태가 생긴다.
+     *
+     * 버튼 강조는 값이 정확히 맞을 때만 켠다. 슬라이더로 7m 를 만들면 셋 다 꺼진다.
+     */
+    function setRadius(m) {
+        rpRadius = m;
+        $('rp-radius').value = m;
+        $('rp-radius-label').textContent = `${m}m`;
+        document.querySelectorAll('.rp-preset button').forEach(b =>
+            b.classList.toggle('on', Number(b.dataset.m) === m));
+    }
+
+    /**
+     * 슬라이더를 끌면 값이 1m 마다 바뀌는데, 그때마다 서버를 부르면 한 번 끄는 동안
+     * 수십 번이 나간다. 숫자는 바로 바꿔 손맛을 남기고, 지도만 잠깐 뒤에 그린다.
+     */
+    let radiusTimer = null;
+    function refreshPreviewSoon() {
+        clearTimeout(radiusTimer);
+        radiusTimer = setTimeout(refreshPreview, 140);
+    }
+
+    /**
+     * 겹쳐 들어온 미리보기 요청 중 <b>마지막 것만</b> 반영하기 위한 순번.
+     *
+     * 슬라이더를 끌면 요청이 연달아 나가는데, 응답이 보낸 순서대로 온다는 보장이 없다.
+     * 늦게 도착한 옛 응답이 최신 화면을 덮으면 '22m 인데 막히는 구간이 15m 보다 적다'는
+     * 말이 안 되는 상태가 된다. 실제로 그렇게 나왔다.
+     *
+     * map.js 의 searchSeq 와 같은 방식이다(장소 검색 ↔ 경로 경합에서 이미 쓴 수법).
+     */
+    let previewSeq = 0;
+
+    async function refreshPreview() {
+        if (!rpPos) {
+            return;
+        }
+
+        const seq = ++previewSeq;
+        const sev = severityValue();
+        const color = sevColor(sev);
+        const radius = rpRadius ?? defaultRadiusM;
+
+        // admin.html 과 같은 엔드포인트다. 이름만 공사용이고 안에서 도는 것은
+        // 서버의 매칭 규칙 그 자체라, 화면에 보이는 것과 실제 차단이 어긋나지 않는다.
+        const res = await fetch(`/api/construction/preview?lat=${rpPos.getLat()}`
+            + `&lng=${rpPos.getLng()}&radiusM=${radius}`).then(r => r.json());
+
+        if (seq !== previewSeq) {
+            return;   // 그 사이 더 최신 요청이 나갔다. 이 응답은 버린다
+        }
+
+        // 지우는 것을 여기까지 미룬다. 요청 직전에 지우면 응답을 기다리는 동안
+        // 지도에서 표시가 사라져 깜빡인다.
+        clearPreview();
+
+        if (sev !== '낮음') {
+            res.segments.forEach(s => {
+                const line = new kakao.maps.Polyline({
+                    path: s.map(c => new kakao.maps.LatLng(c[0], c[1])),
+                    strokeWeight: 8, strokeColor: color, strokeOpacity: 0.8, zIndex: 5
+                });
+                line.setMap(map);
+                rpPreview.push(line);
+            });
+        }
+
+        rpCircle = new kakao.maps.Circle({
+            center: rpPos, radius: radius,
+            strokeWeight: 2, strokeColor: color, strokeOpacity: 0.9, strokeStyle: 'dashed',
+            fillColor: color, fillOpacity: 0.12, map: map
+        });
+
+        const pin = document.createElement('div');
+        pin.className = 'rep picking ' + sevClass(sev);
+        pin.title = '여기에 제보합니다. 다시 클릭하면 옮겨집니다.';
+        rpMarker = new kakao.maps.CustomOverlay({
+            position: rpPos, content: pin, zIndex: 8, map: map
+        });
+
+        $('rp-count').textContent = sev === '낮음' ? '해당 없음' : `${res.segmentCount} 개`;
+
+        if (sev === '낮음') {
+            $('rp-hint').textContent = '통행 가능은 길을 막지 않습니다. 참고정보로만 표시됩니다.';
+        } else if (res.segmentCount === 0) {
+            $('rp-hint').textContent = '주변에 보도가 없습니다. 보도 위로 옮겨 찍어 주세요.';
+        } else if (res.fallback) {
+            $('rp-hint').textContent = '찍은 자리에 보도가 없어 가장 가까운 곳을 잡았습니다. '
+                + '보도 위로 옮기면 정확해집니다.';
+        } else {
+            $('rp-hint').textContent = sev === '높음'
+                ? '색칠된 구간이 경로에서 빠집니다.'
+                : '색칠된 구간을 피한 경로를 함께 보여주게 됩니다.';
+        }
+    }
+
+    function clearPreview() {
+        rpPreview.forEach(o => o.setMap(null));
+        rpPreview = [];
+        if (rpCircle) { rpCircle.setMap(null); rpCircle = null; }
+        if (rpMarker) { rpMarker.setMap(null); rpMarker = null; }
+    }
+
+    function updateSevHint() {
+        const s = severityValue();
+        $('rp-sev-hint').textContent =
+            s === '높음' ? '지나갈 수 없는 곳입니다. 경로에서 바로 빠집니다.'
+          : s === '보통' ? '지나갈 수는 있지만 조심해야 하는 곳입니다.'
+                         : '알아두면 좋은 정보입니다. 경로는 바뀌지 않습니다.';
+    }
+
+    async function save() {
+        if (!rpPos) {
+            setMsg('먼저 지도를 클릭해 위치를 찍으세요.', false);
+            return;
+        }
+
+        const res = await fetch('/api/report?'
+            + `lat=${rpPos.getLat()}&lng=${rpPos.getLng()}&radiusM=${rpRadius ?? defaultRadiusM}`
+            + `&severity=${encodeURIComponent(severityValue())}`
+            + `&type=${encodeURIComponent($('rp-type').value)}`
+            + `&description=${encodeURIComponent($('rp-desc').value)}`,
+            { method: 'POST' }).then(r => r.json());
+
+        if (!res.ok) {
+            setMsg(res.message, false);
+            return;
+        }
+
+        // 올리긴 했는데 아무것도 안 막는 경우를 알려줘야 한다.
+        if (res.segmentCount === 0 && severityValue() !== '낮음') {
+            setMsg('올렸습니다. 다만 주변에 보도가 없어 경로에는 반영되지 않았습니다.', false);
+        } else {
+            setMsg('제보해 주셔서 감사합니다. 바로 반영됐습니다.', true);
+        }
+
+        closeNew();
+        await loadReports();
+        showMeta(await fetch('/api/config').then(r => r.json()));
+    }
+
+    function setMsg(text, ok) {
+        setStatus(text, ok ? 'ok' : 'fail');
+        const box = $('rp-msg');
+        box.style.display = 'block';
+        box.style.background = ok ? '#e8f5e9' : '#ffebee';
+        box.style.color = ok ? '#1b5e20' : '#b71c1c';
+        box.textContent = text;
+        if (!ok && text.includes('로그인')) {
+            box.innerHTML += ' <a href="/user/login" style="color:#b71c1c">로그인 ↗</a>';
+        }
+    }
+
+    function showLogin(id) {
+        loginId = id || '';
+        const box = $('r-login');
+        if (loginId) {
+            box.style.cssText += ';background:#e8f5e9;color:#1b5e20';
+            box.textContent = `${loginId} 님으로 로그인됨 — 제보할 수 있습니다.`;
+        } else {
+            box.style.cssText += ';background:#ffebee;color:#b71c1c';
+            box.innerHTML = '<b>로그인이 필요합니다.</b> 제보는 로그인해야 올릴 수 있습니다.<br>'
+                + '<a href="/user/login" style="color:#b71c1c">로그인하러 가기 ↗</a>';
+        }
+    }
+
+    function showMeta(cfg) {
+        showLogin(cfg.loginId);
+        $('meta').textContent = `${cfg.regionId} · 통행 불가 구간 ${cfg.blockedCount.toLocaleString()}`;
+    }
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    $('t-report').addEventListener('change', applyReportOverlays);
+
+    $('r-add').addEventListener('change', () => {
+        if ($('r-add').checked) {
+            $('r-hint').textContent = '지도를 클릭해 자리를 찍은 뒤 오른쪽에서 [등록] 을 누르세요.';
+            startNew();
+        } else {
+            $('r-hint').textContent = '켜고 지도를 클릭하면 그 자리에 제보를 올립니다.';
+            closeNew();
+            setStatus('제보를 취소했습니다.', 'wait');
+        }
+    });
+
+    document.querySelectorAll('input[name="rsev"]').forEach(r =>
+        r.addEventListener('change', () => { updateSevHint(); refreshPreview(); }));
+
+    document.querySelectorAll('.rp-preset button').forEach(b =>
+        b.addEventListener('click', () => { setRadius(Number(b.dataset.m)); refreshPreview(); }));
+
+    $('rp-radius').addEventListener('input', () => {
+        setRadius(Number($('rp-radius').value));
+        refreshPreviewSoon();
+    });
+
+    $('rp-save').addEventListener('click', save);
+    $('rp-cancel').addEventListener('click', () => {
+        closeNew();
+        setStatus('제보를 취소했습니다.', 'wait');
+    });
+
+    boot();
+</script>
+</body>
+</html>

@@ -3,7 +3,12 @@ target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-*.log
+
+### 비밀값 ###
+# DB 비밀번호 / 카카오 REST API 키가 들어있다.
+# 채울 항목은 credentials/api_keys.properties.example 를 보면 된다(이쪽은 커밋됨).
+credentials/api_keys.properties
+
 ### STS ###
 .apt_generated
 .classpath
@@ -31,3 +36,20 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 서버 로그 ###
+# 개발 서버를 띄우면 프로젝트 폴더에 쌓인다. 저장소에 들어갈 이유가 없다.
+server.out.log
+server.err.log
+
+### 개발자 개인 설정 / 스크래치 ###
+# .claude/launch.json 은 이 PC 의 절대경로가 박혀 있어 다른 사람에게 쓸모없다.
+# cp.txt 는 로컬 .m2 클래스패스 덤프다.
+.claude/
+cp.txt
+
+### 작업 자료 ###
+# data/  인계서 · DDL · 백업 SQL · OSM export JSON (23MB). 저장소 밖에서 관리한다.
+# textfile/  data/ 의 구버전 사본이다.
+data/
+textfile/
