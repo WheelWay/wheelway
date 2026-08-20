@@ -9,7 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WheelWay</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/main.css?v=20260814-1" rel="stylesheet">
+    <link href="/css/main.css?v=20260819-27" rel="stylesheet">
 </head>
 <body class="main-body">
 <main class="main-shell">
@@ -27,6 +27,16 @@
     </header>
 
     <section class="main-content" aria-label="WheelWay 서비스 선택">
+        <div class="main-hero">
+            <p class="hero-kicker">WHEELCHAIR MOBILITY SERVICE</p>
+            <h1>휠체어 이동을 위한<br>더 편안한 길찾기</h1>
+            <p class="hero-description">내게 맞는 이동 수단을 선택하고, 편안한 이동을 시작해 보세요.</p>
+            <div class="hero-actions">
+                <button class="hero-primary-button" type="button" data-service="지도">휠체어 길찾기 시작</button>
+                <a class="hero-secondary-link" href="#service-area">이동 서비스 둘러보기</a>
+            </div>
+        </div>
+
         <svg class="main-logo" viewBox="0 0 250 235" preserveAspectRatio="xMidYMid meet" role="img" aria-label="WheelWay">
             <circle cx="76" cy="37" r="12" fill="#1d75e6"/>
             <path d="M70 57c4-7 15-9 23-4l13 9h23c6 0 10 4 10 10s-4 10-10 10h-29c-3 0-6-1-8-3l-7-5 10 34h26c5 0 9 3 10 8l9 28c2 6-1 12-7 14-6 2-12-1-14-7l-7-21H87c-6 0-10-4-12-9L60 76c-2-7 2-15 10-19z" fill="#1d75e6"/>
@@ -42,13 +52,20 @@
             </text>
         </svg>
 
-        <div class="transport-menu">
+        <aside class="journey-card" aria-label="WheelWay 서비스 안내">
+            <span class="journey-card-label">WHEELWAY GUIDE</span>
+            <strong>오늘의 이동을<br>더 편안하게 준비하세요.</strong>
+            <p>휠체어 이동에 맞는 길찾기와 교통수단 정보를 한곳에서 확인할 수 있어요.</p>
+            <span class="journey-card-chip">휠체어 친화 이동</span>
+        </aside>
+        <div id="service-area" class="transport-menu">
             <button class="transport-button" type="button" data-service="지도">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
                     <path d="M6 12l17-6 18 6 17-6v46l-17 6-18-6-17 6V12z"/>
                     <path d="M23 6v46M41 12v46"/>
                 </svg>
                 <span class="transport-label">지도</span>
+                <span class="transport-description">휠체어 이동 경로를 확인해요</span>
             </button>
             <button class="transport-button" type="button" data-service="버스">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
@@ -57,6 +74,7 @@
                     <circle cx="20" cy="51" r="4" fill="currentColor"/><circle cx="45" cy="51" r="4" fill="currentColor"/>
                 </svg>
                 <span class="transport-label">버스</span>
+                <span class="transport-description">저상버스 정보를 찾아봐요</span>
             </button>
             <button class="transport-button" type="button" data-service="택시">
                 <svg class="transport-icon" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
@@ -66,8 +84,10 @@
                     <circle cx="18" cy="52" r="4" fill="currentColor"/><circle cx="46" cy="52" r="4" fill="currentColor"/>
                 </svg>
                 <span class="transport-label">택시</span>
+                <span class="transport-description">편안한 택시 이동을 준비해요</span>
             </button>
         </div>
+        <p id="serviceNotice" class="service-notice is-visible" role="status" aria-live="polite">서비스 선택 · 원하는 이동 서비스를 선택해 주세요.</p>
     </section>
 </main>
 <div id="loginModal" class="login-modal" role="dialog" aria-modal="true" aria-labelledby="modal-login-title" aria-hidden="true">
@@ -76,6 +96,7 @@
             <a id="closeLoginModal" class="login-modal-close" href="#" aria-label="로그인 창 닫기">×</a>
             <div id="loginPanel" class="modal-panel is-active">
                 <h1 id="modal-login-title">로그인</h1>
+                <p class="modal-login-intro">WheelWay와 함께 더 편안한 이동을 시작하세요.</p>
                 <form id="modalLoginForm" novalidate>
                     <div class="modal-login-field">
                         <label class="visually-hidden" for="modalUserId">아이디</label>
@@ -85,6 +106,7 @@
                         <label class="visually-hidden" for="modalPassword">비밀번호</label>
                         <input id="modalPassword" type="password" name="password" placeholder="비밀번호 입력" autocomplete="current-password">
                     </div>
+                    <label class="modal-remember"><input id="modalRememberUserId" type="checkbox"> <span>아이디 저장</span></label>
                     <div class="modal-find-row">
                         <a href="#loginModal" data-modal-panel="findIdPanel">아이디 찾기</a>
                         <a href="#loginModal" data-modal-panel="findPasswordPanel">비밀번호 찾기</a>
@@ -141,8 +163,12 @@
     </div>
 </div>
 <script>
-    document.querySelectorAll('.transport-button').forEach(button => {
-        button.addEventListener('click', () => alert(button.dataset.service + ' 기능은 준비 중입니다.'));
+    const serviceNotice = document.getElementById('serviceNotice');
+    document.querySelectorAll('[data-service]').forEach(button => {
+        button.addEventListener('click', () => {
+            serviceNotice.textContent = button.dataset.service + ' 서비스는 현재 준비 중입니다.';
+            serviceNotice.classList.add('is-visible');
+        });
     });
 
     const loginModal = document.getElementById('loginModal');
@@ -150,6 +176,30 @@
     const modalLoginForm = document.getElementById('modalLoginForm');
     const modalUserId = document.getElementById('modalUserId');
     const modalPassword = document.getElementById('modalPassword');
+    function addModalPasswordToggle(input) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'modal-password-wrap';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'modal-password-toggle';
+        button.setAttribute('aria-label', '비밀번호 보기');
+        button.setAttribute('aria-pressed', 'false');
+        button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+        button.addEventListener('click', () => {
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.setAttribute('aria-label', visible ? '비밀번호 숨기기' : '비밀번호 보기');
+            button.setAttribute('aria-pressed', String(visible));
+        });
+        wrapper.appendChild(button);
+    }
+    addModalPasswordToggle(modalPassword);
+    const modalRememberUserId = document.getElementById('modalRememberUserId');
+    const savedModalUserId = localStorage.getItem('wheelway.savedUserId');
+    if (savedModalUserId) { modalUserId.value = savedModalUserId; modalRememberUserId.checked = true; }
     const modalPanels = document.querySelectorAll('.modal-panel');
 
     function showModalPanel(panelId) {
@@ -196,7 +246,11 @@
         try {
             const response = await fetch('/user/loginProc', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}, body: new URLSearchParams(new FormData(modalLoginForm)) });
             const data = await response.json();
-            if (data.result === 1) location.href = '/';
+            if (data.result === 1) {
+                if (modalRememberUserId.checked) localStorage.setItem('wheelway.savedUserId', modalUserId.value.trim());
+                else localStorage.removeItem('wheelway.savedUserId');
+                location.href = '/';
+            }
             else { alert(data.msg); modalUserId.focus(); }
         } catch (error) { alert('서버에 연결하지 못했습니다.'); }
     });
