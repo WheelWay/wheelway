@@ -14,6 +14,7 @@
     <link href="/css/auth.css" rel="stylesheet">
 </head>
 <body class="auth-body">
+<header class="auth-header"><a class="auth-wordmark" href="/">WheelWay</a><a class="auth-home-link" href="/">메인으로</a></header>
 <main class="auth-page"><section class="auth-card result-card" aria-labelledby="page-title">
     <h1 id="page-title">로그인 성공</h1>
     <p class="auth-message"><strong><%= ssUserName %></strong> 님이 로그인하였습니다.<br><%= ssUserId %></p>

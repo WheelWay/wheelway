@@ -7,25 +7,27 @@
     <title>WheelWay | 회원가입</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
     <style>
-        :root { --panel:#ffdfae; --line:#c99094; --button:#efad72; --page:#f4f4f4; }
+        :root { --panel:#fff; --line:#c99094; --button:#efad72; --page:#FDF8F1; }
         body { min-height:100vh; background:var(--page); color:#050505; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
-        .page-shell { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:34px 4.4vw; }
-        .signup-panel { width:100%; max-width:1700px; aspect-ratio:1.83 / 1; display:flex; flex-direction:column; justify-content:center; background:var(--panel); border:0; }
+        .page-shell { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:3rem 1rem; }
+        .signup-panel { width:min(92vw, 560px); max-width:560px; min-height:auto; display:flex; flex-direction:column; justify-content:center; background:var(--panel); border:0; border-radius:24px; box-shadow:0 18px 42px rgba(85, 66, 45, .10); }
         /* 넓은 화면에서 입력창이 지나치게 길어 보이지 않도록 폼 폭을 제한한다. */
-        .signup-form { width:33%; max-width:570px; }
+        .signup-form { width:100%; max-width:500px; margin-inline:auto; }
         .signup-panel h1 { font-size:clamp(1.8rem, 2vw, 2.45rem); font-weight:800 !important; letter-spacing:-.1em; }
         .form-label, legend, .form-check-label { font-size:clamp(.92rem, 1vw, 1.1rem); font-weight:800 !important; letter-spacing:-.07em; }
-        .form-control { min-height:clamp(42px, 2.7vw, 54px); padding:0 1.2rem; border:1.5px solid var(--line); border-radius:1.5rem; background:#fff; font-size:clamp(.82rem, .92vw, 1rem); }
+        .form-control { min-height:clamp(42px, 2.7vw, 54px); padding:0 .35rem; border:0; border-bottom:1.5px solid #b8a99b; border-radius:0; background:transparent; font-size:clamp(.82rem, .92vw, 1rem); }
         .form-control::placeholder { color:#a2a2a2; font-weight:600; }
         /* Edge의 기본 비밀번호 표시 아이콘은 숨기고, 오른쪽의 자체 눈 버튼만 사용한다. */
         .form-control::-ms-reveal, .form-control::-ms-clear { display:none; }
-        .form-control:focus { border-color:var(--line); box-shadow:0 0 0 .16rem rgb(201 144 148 / 18%); }
-        .input-group .form-control { border-radius:1.5rem 0 0 1.5rem; border-right:0; }
-        .input-group .btn { min-width:clamp(86px, 5vw, 112px); border:1.5px solid var(--line); border-left:0; border-radius:0 1.5rem 1.5rem 0; font-size:clamp(.8rem, .85vw, .95rem); }
+        .form-control:focus { border-color:transparent; border-bottom-color:#1d75e6; box-shadow:none; }
+        .input-group { align-items:flex-end; }
+        .input-group .form-control { border:0; border-bottom:1.5px solid #b8a99b; border-radius:0; }
+        .input-group .form-control:focus { border-bottom-color:#1d75e6; }
+        .input-group .btn { min-width:clamp(86px, 5vw, 112px); min-height:clamp(36px, 2.35vw, 46px); margin-left:.7rem; border:1.5px solid var(--line); border-radius:.8rem; font-size:clamp(.8rem, .85vw, .95rem); }
         .btn-check-action { background:var(--button); color:#fff; }
         .btn-check-action:hover, .btn-check-action:focus { background:#e69c61; color:#fff; border-color:var(--line); }
-        .btn-eye { min-width:45px !important; padding:0; background:#fff; color:#8e8e8e; }
-        .btn-eye:hover, .btn-eye:focus { background:#fff; color:#555; border-color:var(--line); }
+        .btn-eye { min-width:45px !important; margin-left:0 !important; padding:0; border:0 !important; border-bottom:1.5px solid #b8a99b !important; border-radius:0 !important; background:transparent; color:#8e8e8e; }
+        .btn-eye:hover, .btn-eye:focus { background:transparent; color:#555; border-bottom-color:#1d75e6 !important; }
         .eye-icon { width:17px; height:17px; fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.6; }
         .btn-signup { background:var(--button); border-color:var(--line); border-radius:1.5rem; min-height:clamp(43px, 2.8vw, 56px); font-size:clamp(.9rem, 1vw, 1.1rem); }
         .btn-signup:hover, .btn-signup:focus { background:#e69c61; border-color:var(--line); }
@@ -34,8 +36,8 @@
         .feedback { min-height:1rem; margin-left:.65rem; font-size:.75rem; font-weight:700; }
         .form-text { color:#ff1616; font-size:.72rem; font-weight:700; }
         .is-valid, .is-invalid { background-image:none !important; padding-right:1.2rem !important; }
-        .is-valid { border-color:#80a973 !important; } .is-invalid { border-color:var(--line) !important; }
-        @media (min-width:1200px) { .signup-panel { padding:3.2rem 5rem !important; } }
+        .is-valid { border:0 !important; border-bottom:1.5px solid #80a973 !important; } .is-invalid { border:0 !important; border-bottom:1.5px solid #d45e5e !important; }
+        @media (min-width:1200px) { .signup-panel { padding:3.25rem 3.1rem !important; } }
         @media (max-width:767.98px) { .page-shell { align-items:flex-start; padding:12px; } .signup-panel { min-height:auto; aspect-ratio:auto; padding:2rem 1.25rem !important; } .signup-form { width:100%; max-width:510px; } }
         @media (max-width:420px) { .input-group .btn { min-width:76px; padding-inline:.35rem; font-size:.74rem; } .signup-panel h1 { font-size:1.5rem; } }
     </style>

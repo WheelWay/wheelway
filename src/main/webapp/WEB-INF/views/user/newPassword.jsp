@@ -10,6 +10,7 @@
     <link href="/css/auth.css" rel="stylesheet">
 </head>
 <body class="auth-body">
+<header class="auth-header"><a class="auth-wordmark" href="/">WheelWay</a><a class="auth-home-link" href="/">메인으로</a></header>
 <main class="auth-page">
     <section class="auth-card" aria-labelledby="page-title">
         <c:choose>

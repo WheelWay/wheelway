@@ -6,12 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>비밀번호 재설정</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/auth.css" rel="stylesheet">
+    <link href="/css/auth.css?v=20260819-6" rel="stylesheet">
 </head>
 <body class="auth-body">
+<header class="auth-header"><a class="auth-wordmark" href="/">WheelWay</a><a class="auth-home-link" href="/">메인으로</a></header>
 <main class="auth-page">
-    <section class="auth-card" aria-labelledby="page-title">
+    <section class="auth-card password-find-card" aria-labelledby="page-title">
         <h1 id="page-title">비밀번호 재설정</h1>
+        <div class="find-page-intro">
+            <span>PASSWORD RECOVERY</span>
+            <p>가입할 때 등록한 정보를 입력하면 비밀번호를 다시 설정할 수 있어요.</p>
+        </div>
         <form id="f" method="post" action="/user/searchPasswordProc" novalidate>
             <div class="auth-field">
                 <label class="auth-label" for="userName">이름</label>
@@ -27,6 +32,7 @@
             </div>
             <button id="btnSearchPassword" class="auth-button" type="submit">비밀번호 찾기</button>
         </form>
+        <p class="find-security-note">본인 확인 후 새 비밀번호를 설정할 수 있습니다.</p>
         <nav class="auth-link-row" aria-label="계정 메뉴"><a href="/user/login">로그인</a><a href="/user/searchUserId">아이디 찾기</a></nav>
     </section>
 </main>

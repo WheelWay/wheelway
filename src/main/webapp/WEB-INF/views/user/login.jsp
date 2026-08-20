@@ -6,13 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>로그인</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/auth.css" rel="stylesheet">
+    <link href="/css/auth.css?v=20260819-5" rel="stylesheet">
 </head>
 <body class="auth-body">
+<header class="auth-header"><a class="auth-wordmark" href="/">WheelWay</a><a class="auth-home-link" href="/">메인으로</a></header>
 <main class="auth-page">
     <section class="auth-card login-card" aria-labelledby="login-title">
         <div class="login-form-area">
             <h1 id="login-title">로그인</h1>
+            <p class="login-intro">WheelWay와 함께 더 편안한 이동을 시작하세요.</p>
             <form id="f" novalidate>
                 <div class="auth-field">
                     <label class="visually-hidden" for="userId">아이디</label>
@@ -26,7 +28,9 @@
                     <a class="login-find-link" href="/user/searchUserId"><span aria-hidden="true"></span>아이디 찾기</a>
                     <a class="login-find-link" href="/user/searchPassword"><span aria-hidden="true"></span>비밀번호 찾기</a>
                 </nav>
+                <label class="login-remember"><input id="rememberUserId" type="checkbox"> <span>아이디 저장</span></label>
                 <button id="btnLogin" class="auth-button" type="submit">로그인하기</button>
+                <p class="login-signup-guide">아직 회원이 아니신가요? <a href="/user/userRegForm">회원가입</a></p>
             </form>
         </div>
         <div class="login-brand" aria-label="WheelWay 로고">
@@ -50,6 +54,30 @@
     const form = document.getElementById('f');
     const userId = document.getElementById('userId');
     const password = document.getElementById('password');
+    function addPasswordToggle(input) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'login-password-wrap';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'login-password-toggle';
+        button.setAttribute('aria-label', '비밀번호 보기');
+        button.setAttribute('aria-pressed', 'false');
+        button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+        button.addEventListener('click', () => {
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.setAttribute('aria-label', visible ? '비밀번호 숨기기' : '비밀번호 보기');
+            button.setAttribute('aria-pressed', String(visible));
+        });
+        wrapper.appendChild(button);
+    }
+    addPasswordToggle(password);
+    const rememberUserId = document.getElementById('rememberUserId');
+    const savedUserId = localStorage.getItem('wheelway.savedUserId');
+    if (savedUserId) { userId.value = savedUserId; rememberUserId.checked = true; }
     form.addEventListener('submit', async event => {
         event.preventDefault();
         if (userId.value.trim() === '') { alert('아이디를 입력하세요.'); userId.focus(); return; }
@@ -57,7 +85,11 @@
         try {
             const response = await fetch('/user/loginProc', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}, body: new URLSearchParams(new FormData(form)) });
             const data = await response.json();
-            if (data.result === 1) location.href = '/';
+            if (data.result === 1) {
+                if (rememberUserId.checked) localStorage.setItem('wheelway.savedUserId', userId.value.trim());
+                else localStorage.removeItem('wheelway.savedUserId');
+                location.href = '/';
+            }
             else { alert(data.msg); userId.focus(); }
         } catch (error) { alert('서버에 연결하지 못했습니다.'); }
     });
