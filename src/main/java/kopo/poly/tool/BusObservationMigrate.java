@@ -4,7 +4,6 @@ import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,7 +23,7 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * 버스 관측 두 표를 <b>로컬에서 AWS 로 그대로 복사하는</b> 도구.
+ * 버스 관측 두 표를 <b>옛 로컬 DB 에서 지금 쓰는 DB 로 복사하는</b> 도구.
  * {@code BUS_LOW_FLOOR_SEEN} · {@code BUS_ROUTE_SPEED} 뿐이다.
  *
  * <p>Spring Bean 이 아니고 main 으로만 실행한다. 다른 단독 도구들과 같은 규칙이다.
@@ -48,31 +47,42 @@ import java.util.Properties;
  * 그동안 화면은 <b>"저상버스가 서는 정류장이 없습니다"</b> 라고 말한다. 사실이 아닌데 그렇게 뜬다.
  * 그래서 옮긴다.
  *
+ * <h3>★ 방향 — 대상이 properties 다</h3>
+ * <pre>
+ *   원본  --from-url=jdbc:mariadb://192.168.89.129:3306/wheelway   옛 로컬. 읽기만 한다
+ *   대상  application.properties 의 spring.datasource.*            지금 앱이 쓰는 DB(= RDS)
+ * </pre>
+ *
+ * <p>대상을 옵션이 아니라 properties 로 잡은 이유는 <b>"앱이 보는 DB 에 채운다"</b> 가
+ * 이 작업의 정의이기 때문이다. 대상을 손으로 적게 하면 properties 는 RDS 를 보는데 데이터는
+ * 엉뚱한 DB 에 들어가는 상태가 생기고, 그때 화면은 <b>그냥 '관측이 없다'</b> 고만 말한다.
+ *
+ * <p>원본에 기본값을 둔 것은 읽기 전용이라서다. 잘못 짚어도 <b>못 읽거나 0건</b>일 뿐이다.
+ *
  * <h3>파일을 거치지 않는 이유</h3>
  * {@link ConstructionZoneBackup} 은 파일로 뜬다. 그건 <b>되돌릴 지점을 남기는 일</b>이라
- * 파일이 목적 자체다. 이건 <b>한 번 복사하는 일</b>이고, 원본이 로컬에 그대로 남아 있어서
- * 중간 파일이 안전망 역할을 하지 못한다. 오히려 "파일이 최신인가" 라는 물음이 하나 더 생긴다.
+ * 파일이 목적 자체다. 이건 <b>한 번 복사하는 일</b>이고, 원본이 옛 DB 에 그대로 남아 있어서
+ * 중간 파일이 안전망 역할을 하지 못한다. 오히려 "그 파일이 최신인가" 라는 물음만 하나 는다.
  *
  * <h3>실행 방법</h3>
  * <pre>
  *   // 미리보기 — 양쪽에 무엇이 있는지만 본다. 아무것도 안 쓴다
- *   BusObservationMigrate copy --url=jdbc:mariadb://&lt;rds&gt;:3306/wheelway --user=wheel
+ *   BusObservationMigrate copy
  *
  *   // 실행
- *   BusObservationMigrate copy --url=... --user=wheel --force
+ *   BusObservationMigrate copy --force
  *
- *   // 옮긴 뒤 대조. 인자 없이 돌리면 로컬을 센다
+ *   // 원본이 기본값과 다르면
+ *   BusObservationMigrate copy --from-url=jdbc:mariadb://... --from-user=wheel --force
+ *
+ *   // 대조. 인자 없이 돌리면 대상(properties)을 센다
  *   BusObservationMigrate count
- *   BusObservationMigrate count --url=... --user=wheel
+ *   BusObservationMigrate count --from       원본 쪽을 센다
  * </pre>
  *
- * <p><b>비밀번호</b>: 대상은 {@code --password=} 또는 환경변수 {@code WHEELWAY_TARGET_PASSWORD},
- * 원본(로컬)은 {@code application.properties} 에서 읽는다.
- * 인자로 주면 IntelliJ Run Configuration 에 평문으로 남으므로 환경변수를 권한다.
- *
- * <p><b>★ 원본은 언제나 {@code application.properties} 의 DB 다.</b> 바꿀 수 없게 해뒀다 —
- * 양쪽을 다 옵션으로 열어두면 언젠가 <b>RDS 를 읽어 RDS 에 쓰거나 방향을 뒤집는</b> 실수가 나온다.
- * 관측은 누적값이라 방향이 뒤집히면 <b>실측이 빈 값으로 덮인다.</b> 되돌릴 수 없다.
+ * <p><b>비밀번호</b>: 대상은 {@code application.properties} + {@code credentials/api_keys.properties}
+ * 에서 읽는다. 원본은 {@code --from-password=} 또는 환경변수 {@code WHEELWAY_SOURCE_PASSWORD} 다.
+ * 둘 다 없으면 <b>대상 비밀번호를 그대로 써본다</b> — 로컬과 RDS 를 같은 값으로 만든 경우가 흔해서다.
  */
 public final class BusObservationMigrate {
 
@@ -81,8 +91,14 @@ public final class BusObservationMigrate {
     private static final String PROPS = "src/main/resources/application.properties";
     private static final String LOCAL_PROPS = "credentials/api_keys.properties";
 
-    /** 대상(RDS) 비밀번호. 원본 것과 이름이 다르다 — 같으면 어느 쪽 값인지 헷갈린다. */
-    private static final String ENV_TARGET_PASSWORD = "WHEELWAY_TARGET_PASSWORD";
+    /**
+     * 옛 로컬 DB. {@code application.properties} 에 주석으로 남아 있는 그 주소다.
+     * 읽기만 하므로 기본값을 둔다 — 틀려도 못 읽거나 0건일 뿐이다.
+     */
+    private static final String DEFAULT_SOURCE_URL = "jdbc:mariadb://192.168.89.129:3306/wheelway";
+
+    /** 원본 비밀번호. 대상 것과 이름이 다르다 — 같으면 어느 쪽 값인지 헷갈린다. */
+    private static final String ENV_SOURCE_PASSWORD = "WHEELWAY_SOURCE_PASSWORD";
 
     private static final int BATCH_SIZE = 500;
 
@@ -104,17 +120,20 @@ public final class BusObservationMigrate {
 
     private static void printUsage() {
         System.out.println("사용법: BusObservationMigrate [copy|count] [옵션]");
-        System.out.println("  copy   (기본) 로컬 → 대상 복사. --force 없으면 미리보기만");
-        System.out.println("  count         지역별 행 수를 센다. 옮긴 뒤 대조용");
+        System.out.println("  copy   (기본) 옛 로컬 → properties 의 DB 로 복사. --force 없으면 미리보기");
+        System.out.println("  count         행 수를 센다. 옮긴 뒤 대조용");
         System.out.println();
         System.out.println("옵션:");
-        System.out.println("  --region=<id>   기본 " + DEFAULT_REGION);
-        System.out.println("  --url=jdbc:mariadb://<rds>:3306/wheelway   대상 (copy 에 필수)");
-        System.out.println("  --user=...");
-        System.out.println("  --password=...  환경변수 " + ENV_TARGET_PASSWORD + " 도 가능");
-        System.out.println("  --force         실제로 쓴다. 없으면 양쪽 현황만 보여준다");
+        System.out.println("  --region=<id>        기본 " + DEFAULT_REGION);
+        System.out.println("  --force              실제로 쓴다. 없으면 양쪽 현황만 보여준다");
+        System.out.println("  --from               count 를 원본 쪽에 대고 센다");
         System.out.println();
-        System.out.println("  ★ 원본은 언제나 " + PROPS + " 의 DB 다. 방향은 바꿀 수 없다");
+        System.out.println("  원본(읽기 전용):");
+        System.out.println("    --from-url=" + DEFAULT_SOURCE_URL);
+        System.out.println("    --from-user=...      없으면 대상과 같은 사용자");
+        System.out.println("    --from-password=...  환경변수 " + ENV_SOURCE_PASSWORD + " 도 가능");
+        System.out.println();
+        System.out.println("  ★ 대상은 언제나 " + PROPS + " 의 DB 다. 옵션으로 못 바꾼다");
     }
 
     // --------------------------------------------------------------- copy
@@ -123,22 +142,22 @@ public final class BusObservationMigrate {
         Properties app = readProperties();
         String region = region(opt, app);
 
-        Db source = Db.source(app);
-        Db target = Db.target(app, opt);
-        if (source == null || target == null) {
+        Db target = Db.target(app);
+        Db source = Db.source(app, opt);
+        if (target == null || source == null) {
             return;
         }
-        if (source.url.equals(target.url)) {
+        if (sameServer(source.url, target.url)) {
             // 같은 DB 를 가리키면 DELETE 후 자기 자신을 다시 넣는 꼴이다. 결과는 같지만
             // 하려던 일이 아닌 것이 분명하므로 멈춘다.
-            System.out.println("[중단] 원본과 대상이 같은 DB 입니다: " + source.url);
-            System.out.println("       --url 에 RDS 주소를 주세요.");
+            System.out.println("[중단] 원본과 대상이 같은 DB 입니다: " + target.url);
+            System.out.println("       properties 가 아직 옛 로컬을 보고 있거나, --from-url 이 RDS 입니다.");
             return;
         }
 
         System.out.println("=== 복사 === region=" + region);
         System.out.println("  원본 " + source.url);
-        System.out.println("  대상 " + target.url + " (user=" + target.user + ")");
+        System.out.println("  대상 " + target.url);
         System.out.println();
 
         List<Seen> seen;
@@ -146,6 +165,11 @@ public final class BusObservationMigrate {
         try (Connection con = DriverManager.getConnection(source.url, source.user, source.password)) {
             seen = readSeen(con, region);
             speed = readSpeed(con, region);
+        } catch (SQLException e) {
+            System.out.println("[실패] 원본에 붙지 못했습니다: " + e.getMessage());
+            System.out.println("       옛 로컬 DB(" + source.url + ")가 지금 떠 있는지 확인하세요.");
+            System.out.println("       주소가 다르면 --from-url= 로 주면 됩니다.");
+            return;
         }
 
         long lowRoutes = seen.stream().filter(s -> s.lowCnt() > 0).count();
@@ -213,7 +237,7 @@ public final class BusObservationMigrate {
      * <p><b>UPSERT 가 아니라 DELETE 후 INSERT 인 이유</b>: 관측은 누적값이라
      * 두 번 돌렸을 때 값이 불어나는 것이 제일 무섭다 — 화면에 오류가 안 뜨고
      * 속도만 조용히 틀려진다. 지우고 넣으면 몇 번을 돌려도 결과가 같다.
-     * 빈 RDS 에서는 DELETE 가 0건이라 아무 일도 안 한다.
+     * 빈 대상에서는 DELETE 가 0건이라 아무 일도 안 한다.
      */
     private static int write(Connection con, String region, List<Seen> seen, List<Speed> speed)
             throws SQLException {
@@ -284,16 +308,17 @@ public final class BusObservationMigrate {
      * <p>{@code NODES}/{@code EDGES} 를 같이 세는 것은 인계서 2026-08-24_3 의 7-1 때문이다 —
      * application.properties(64,549/142,450)와 AWS DDL 머리말(32,301/70,956)이 정확히 두 배
      * 차이라, 중복 적재인지 주석이 틀린 것인지 아직 확인하지 않았다.
+     * <b>옛 로컬에 대고 {@code count --from} 을 돌리면 그 자리에서 판가름 난다.</b>
      */
     private static void count(Map<String, String> opt) throws Exception {
         Properties app = readProperties();
 
-        Db db = opt.containsKey("url") ? Db.target(app, opt) : Db.source(app);
+        Db db = opt.containsKey("from") ? Db.source(app, opt) : Db.target(app);
         if (db == null) {
             return;
         }
 
-        System.out.println("=== 행 수 === " + db.url);
+        System.out.println("=== 행 수 === " + (opt.containsKey("from") ? "[원본] " : "[대상] ") + db.url);
         try (Connection con = DriverManager.getConnection(db.url, db.user, db.password)) {
             for (String table : List.of("NODES", "EDGES",
                     "BUS_LOW_FLOOR_SEEN", "BUS_ROUTE_SPEED",
@@ -328,7 +353,7 @@ public final class BusObservationMigrate {
                 System.out.printf("  %-20s %-20s %,10d%n", table, "(지역 없음)", rs.getLong(1));
             }
         } catch (SQLException e) {
-            System.out.printf("  %-20s %s%n", table, "[없음] " + e.getMessage());
+            System.out.printf("  %-20s %s%n", table, "[없음]");
         }
     }
 
@@ -394,44 +419,55 @@ public final class BusObservationMigrate {
 
     private record Db(String url, String user, String password) {
 
-        /** 원본은 언제나 로컬이다. 옵션으로 바꿀 수 없다(클래스 주석 참고). */
-        static Db source(Properties app) {
+        /** 대상은 언제나 앱이 보는 DB 다. 옵션으로 바꿀 수 없다(클래스 주석 참고). */
+        static Db target(Properties app) {
             String url = app.getProperty("spring.datasource.url");
             String user = app.getProperty("spring.datasource.username");
             String password = app.getProperty("spring.datasource.password");
 
             if (url == null || user == null || password == null) {
-                System.out.println("[중단] 원본 접속 정보를 찾지 못했습니다. "
+                System.out.println("[중단] 대상 접속 정보를 찾지 못했습니다. "
                         + PROPS + " / " + LOCAL_PROPS + " 를 확인하세요.");
                 return null;
             }
             return new Db(url, user, password);
         }
 
-        static Db target(Properties app, Map<String, String> opt) {
-            String url = opt.get("url");
-            if (url == null) {
-                System.out.println("[중단] --url=jdbc:mariadb://<rds>:3306/wheelway 가 필요합니다.");
-                return null;
-            }
+        static Db source(Properties app, Map<String, String> opt) {
+            String url = opt.getOrDefault("from-url", DEFAULT_SOURCE_URL);
+            String user = opt.getOrDefault("from-user", app.getProperty("spring.datasource.username"));
 
-            // 사용자를 안 주면 원본 것을 쓴다. RDS 를 같은 계정명으로 만드는 경우가 흔하다.
-            String user = opt.getOrDefault("user", app.getProperty("spring.datasource.username"));
-
-            String password = opt.get("password");
+            String password = opt.get("from-password");
             if (password == null) {
-                password = System.getenv(ENV_TARGET_PASSWORD);
+                password = System.getenv(ENV_SOURCE_PASSWORD);
             }
+            if (password == null) {
+                // 로컬과 RDS 를 같은 값으로 만든 경우가 흔하다. 읽기 전용이라 틀려도
+                // 접속 거부로 끝난다 — 여기서 멈추는 것보다 한 번 시도해보는 편이 낫다.
+                password = app.getProperty("spring.datasource.password");
+            }
+
             if (user == null || password == null) {
-                System.out.println("[중단] 대상 접속 정보가 모자랍니다.");
-                System.out.println("       --user= 와 --password= (또는 환경변수 "
-                        + ENV_TARGET_PASSWORD + ") 가 필요합니다.");
-                System.out.println("       ★ 대상 비밀번호는 " + PROPS + " 에서 가져오지 않습니다 —");
-                System.out.println("         로컬 비밀번호로 RDS 에 붙는 일을 막기 위해서입니다.");
+                System.out.println("[중단] 원본 접속 정보가 모자랍니다.");
+                System.out.println("       --from-user= 와 --from-password= (또는 환경변수 "
+                        + ENV_SOURCE_PASSWORD + ")");
                 return null;
             }
             return new Db(url, user, password);
         }
+    }
+
+    /**
+     * 두 JDBC URL 이 같은 서버·같은 DB 를 가리키는지 본다.
+     * 문자열 비교만 하면 {@code ?sslMode=...} 같은 파라미터 차이로 다른 곳이라고 착각한다.
+     */
+    private static boolean sameServer(String a, String b) {
+        return stripParams(a).equalsIgnoreCase(stripParams(b));
+    }
+
+    private static String stripParams(String url) {
+        int q = url.indexOf('?');
+        return (q < 0 ? url : url.substring(0, q)).trim();
     }
 
     private static int sum(int[] counts) {

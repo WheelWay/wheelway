@@ -576,7 +576,13 @@
         }
 
         // ★ 지도를 만들기 전에 받아둬야 한다. initMap 은 SDK onload 뒤라 늘 이보다 늦다.
-        serviceBounds = cfg.bounds;
+        //
+        // ★ 길이를 검사한다. 노드가 하나도 없으면 서버가 bounds 를 빈 배열로 준다
+        //   (Map.of 가 null 을 못 담아서다). 그런데 [] 는 JS 에서 truthy 라
+        //   initialCenter() 의 `if (!serviceBounds)` 를 그냥 통과하고, 구조분해가
+        //   전부 undefined 가 되어 중심이 NaN 이 된다 — 지도가 아예 안 그려진다.
+        //   map.js 는 이 검사를 하고 있어서 같은 상황에서 서울시청으로 떨어졌다.
+        serviceBounds = (cfg.bounds && cfg.bounds.length === 4) ? cfg.bounds : null;
         defaultRadiusM = cfg.defaultRadiusM;
         $('ed-default-m').textContent = `${defaultRadiusM}m`;
         $('rp-default-m').textContent = `${defaultRadiusM}m`;
