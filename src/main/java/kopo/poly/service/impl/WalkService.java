@@ -59,6 +59,16 @@ public class WalkService implements IWalkService {
     }
 
     @Override
+    public List<WalkRecordDTO> listAll(String username) {
+        if (username == null || username.isBlank()) {
+            return List.of();
+        }
+        List<WalkRecordDTO> rows = walkMapper.getAllRecords(username);
+        rows.forEach(r -> r.setSpeedMPerMin(r.getDistanceM() == null ? null : speedOf(r)));
+        return rows;
+    }
+
+    @Override
     public WalkRecordDTO record(WalkRecordDTO dto) {
         if (dto.getUsername() == null || dto.getUsername().isBlank()) {
             throw new IllegalArgumentException("로그인이 필요합니다.");

@@ -57,7 +57,12 @@ public class ReportService implements IReportService {
     private static final Set<String> SEVERITIES = Set.of(
             ObstacleReportDTO.SEV_LOW, ObstacleReportDTO.SEV_MEDIUM, ObstacleReportDTO.SEV_HIGH);
 
-    private static final Set<String> TYPES = Set.of("계단", "턱", "적치물", "기타");
+    /**
+     * 받을 유형. <b>화면의 &lt;select&gt; 와 반드시 같아야 한다</b> —
+     * 화면에만 늘리면 서버가 "유형은 [...] 중 하나여야 합니다" 로 거절한다.
+     * 지금 목록을 쓰는 화면이 셋이다: map.html(제보 탭) · report.html · admin.html.
+     */
+    private static final Set<String> TYPES = Set.of("계단", "턱", "적치물", "공사", "기타");
 
     private static final Set<String> STATUSES = Set.of(
             ObstacleReportDTO.ST_PENDING, ObstacleReportDTO.ST_OPEN,

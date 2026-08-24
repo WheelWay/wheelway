@@ -5,7 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- 지역명은 서버가 정한다. 여기에 박아두면 region-id 를 바꿨을 때 거짓말이 된다. -->
     <title>휠체어 이동경로</title>
+    <!--
+      ★ 로그인 화면의 스타일시트를 그대로 가져다 쓴다.
+
+      장소 등록 창은 '로그인과 같은 구조·같은 색' 이어야 한다. 값을 map.css 에 베껴 적으면
+      로그인 쪽을 고칠 때마다 두 화면이 조금씩 어긋난다 — 원본을 하나로 둔다.
+
+      겹치는 셀렉터는 `*`(box-sizing) 하나뿐이고 두 파일의 값이 같다(2026-08-21 확인).
+      body 규칙은 .auth-body 로 묶여 있어 이 화면에는 닿지 않는다.
+    -->
+    <link rel="stylesheet" href="/css/auth.css">
     <link rel="stylesheet" href="/css/map.css">
+
+    <!--
+      카카오(다음) 우편번호 찾기. 장소 등록 창에서만 쓴다.
+
+      ★ 이건 앱키가 필요 없다. 지도 SDK 와 달리 도메인 등록과도 무관하므로
+        NCP 로 옮길 때 '지도 SDK 를 불러오지 못했습니다' 같은 일이 여기서는 안 생긴다.
+
+      ★ 이 API 는 좌표를 주지 않는다 — address 와 zonecode 뿐이다.
+        좌표는 서버가 카카오 주소검색으로 따로 만든다(UserPlaceService).
+    -->
+    <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 </head>
 <body>
 
@@ -38,22 +59,70 @@
           여러 곳에 걸려 있어(activeTab, 패널 토글, 핸들러 등록) 바꾸면 그 전부를
           같이 고쳐야 하고, 얻는 것은 없다. 사용자가 보는 글자와 코드 안의 이름은 별개다.
         -->
-        <button class="rail-tab is-active" data-tab="map">도보</button>
-        <button class="rail-tab is-soon" data-tab="bus">버스</button>
-        <!-- 내용이 생겼으므로 is-soon(흐린 글씨)을 뗀다. -->
-        <button class="rail-tab" data-tab="taxi">택시</button>
+        <!--
+          ★ 아이콘 위 · 글자 아래. 이동수단 탭 넷(도보·버스·택시·제보)이 모두 같은 구조다.
+
+          글자만 있을 때는 넷이 같은 크기의 글자 덩어리라 서로 구분되는 것이 '읽고 나서'였다.
+          아이콘이 앞에 서면 읽기 전에 갈린다 — 밖에서 한 손으로 쓰는 화면이라 이 차이가 크다.
+
+          ★ 아이콘을 직접 그린다. 카카오·구글 저작물을 쓰지 않는다 —
+            정류장 마커·챗봇 버튼을 인라인 SVG 로 그린 것과 같은 이유다.
+            파일이 안 늘고, 색은 currentColor 라 켜짐/흐림 상태를 따라간다.
+
+          MY 는 아이콘을 안 준다. 이동수단이 아니라 '내 것' 으로 가는 칸이라
+          같은 줄로 읽히면 안 된다. 대신 .rail-tab 의 min-height 로 높이만 맞춘다.
+        -->
+        <button class="rail-tab is-active" data-tab="map">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="13.4" cy="4.2" r="2"/>
+                <path d="M11.3 21.2l1.5-6.4-3.4-2.6 1-5.2 4 2 3 1"/>
+                <path d="M10.4 7L7.2 10.4M12.8 14.8l3 6.4"/>
+            </svg>도보
+        </button>
+        <!--
+          버스·택시 모두 내용이 생겼으므로 is-soon(흐린 글씨)을 뗐다.
+          버스는 택시보다 늦게 뗐다 — 화면은 먼저 붙었는데 클래스가 남아 있었다(2026-08-24).
+
+          앞으로 '아직 안 되는 탭'은 흐리게 두지 않고 눌렀을 때 상태줄로 알린다
+          (map.js 의 '준비 중입니다'). 흐린 글씨는 눌리지 않는 것처럼 보여서
+          왜 안 되는지를 말해주지 못한다.
+        -->
+        <button class="rail-tab" data-tab="bus">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4.5" y="3" width="15" height="14" rx="2.6"/>
+                <path d="M4.5 8.6h15"/>
+                <circle cx="8.4" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+                <circle cx="15.6" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+                <path d="M7.4 17v2.4M16.6 17v2.4"/>
+            </svg>버스
+        </button>
+        <button class="rail-tab" data-tab="taxi">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9.4 6.6V4.4h5.2v2.2"/>
+                <path d="M5 15.6 6.7 8.6h10.6l1.7 7"/>
+                <rect x="3.4" y="15.6" width="17.2" height="3.6" rx="1.3"/>
+                <path d="M6.8 19.2v1.4M17.2 19.2v1.4"/>
+            </svg>택시
+        </button>
 
         <!--
-          제보 화면. 지도와 나란한 '실제로 동작하는' 탭이라 버스·택시처럼 흐리게 두지 않는다.
-          관리자 화면과 골격은 같지만 등록만 되는 별도 화면(/report.html)으로 간다.
+          제보. 예전에는 /report.html 로 <b>페이지를 넘어갔다.</b> 같은 줄의 칸인데 혼자만
+          화면이 바뀌니 보던 지도와 찍어둔 출발·도착이 통째로 사라졌다 —
+          제보는 '지금 보고 있는 이 자리' 를 올리는 일이라 그게 특히 손해였다.
+          이제 도보·버스·택시와 <b>같은 탭</b>으로 이 화면 안에서 끝난다.
+
+          /report.html 은 그대로 둔다. 링크로 바로 들어오는 길이고 JS 없이도 돈다.
         -->
-        <a class="rail-tab rail-report" href="/report.html" data-tab="report">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <button class="rail-tab rail-report" type="button" data-tab="report">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3.5 1.8 20.5h20.4L12 3.5z"/>
                 <path d="M12 9.5v5M12 17.6v.1"/>
             </svg>제보
-        </a>
+        </button>
 
         <!--
           메인으로 돌아가기. /main 은 JSP 라 세션을 보고 화면을 나눈다
@@ -147,7 +216,8 @@
                     <ul class="suggest" id="sg-end" hidden></ul>
                 </div>
 
-                <!-- 저장된 장소. 로그인이 붙어야 채울 수 있어서 지금은 안내만 띄운다. -->
+                <!-- 저장된 장소. 집·회사는 눌러서 등록·사용한다(map.js PLACE_KINDS).
+                     '자주가는 경로'는 담을 표가 없어 안내만 띄운다. -->
                 <div class="shortcuts" id="shortcuts">
                     <button class="shortcut" data-place="home">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -195,14 +265,15 @@
                 <div class="route-note" id="r-note"></div>
 
                 <!--
-                  이동 설명 자리. 아직 채우지 않는다.
-                  EDGES 에 도로명 컬럼이 없어서 '어디에서 몇 m' 를 쓸 수 없다.
-                  넣으려면 DDL 에 이름 컬럼을 더하고 재적재해야 한다.
+                  ★ '이동 설명' 자리를 뺐다 (2026-08-24).
+
+                  '준비 중입니다' 만 뜨는 빈 상자였다. EDGES 에 도로명 컬럼이 없어서
+                  '어디에서 몇 m' 를 못 쓰는데, 그 사정을 화면이 자리로 차지하고 있었다 —
+                  사용자에게는 <b>고장 난 칸</b>으로 보인다.
+
+                  넣게 되면 그때 다시 만든다. 필요한 것은 DDL 에 이름 컬럼을 더하고 재적재하는 것.
+                  (map.css 의 .steps-head/.steps/.steps-empty 도 같이 지웠다)
                 -->
-                <div class="steps-head">이동 설명</div>
-                <ol class="steps" id="steps">
-                    <li class="steps-empty">준비 중입니다.</li>
-                </ol>
             </section>
 
             <!--
@@ -294,6 +365,49 @@
 
                 <!-- 내용은 map.js 의 TAXI_ORGS 에서 그린다. 문구를 고칠 곳은 그 한 군데다. -->
                 <div class="taxi-body" id="taxi-body"></div>
+            </section>
+
+            <!--
+              ⑥ 제보 — ★ 임시 디자인이다. 동작을 먼저 옮겨온 것이고 모양은 뒤에 손본다.
+              /report.html 에 있던 것 중 '올리는 데 꼭 필요한 것' 만 가져왔다.
+              (미리보기 원·막히는 보도 수·목록은 아직 없다. 관리자 화면에 있다)
+            -->
+            <section class="pane" id="pane-report" hidden>
+                <h2 class="section-title">장애물 제보</h2>
+
+                <div class="rp2-pos" id="rp2-pos">지도를 클릭해 위치를 찍으세요.</div>
+
+                <div class="rp2-label">얼마나 막혀 있나요?</div>
+                <div class="rp2-sev">
+                    <label><input type="radio" name="rp2sev" value="낮음">통행 가능</label>
+                    <label><input type="radio" name="rp2sev" value="보통">고려</label>
+                    <label><input type="radio" name="rp2sev" value="높음" checked>통행 불가</label>
+                </div>
+                <div class="rp2-hint" id="rp2-sev-hint"></div>
+
+                <div class="rp2-label">유형</div>
+                <select class="rp2-input" id="rp2-type">
+                    <option>턱</option>
+                    <option>계단</option>
+                    <option>적치물</option>
+                    <option>공사</option>
+                    <option>기타</option>
+                </select>
+
+                <div class="rp2-label">설명 <span style="color:#999">(선택)</span></div>
+                <textarea class="rp2-input" id="rp2-desc" rows="3" maxlength="500"
+                          placeholder="예) 보도 위에 공사 자재가 쌓여 있어 지나갈 수 없습니다."></textarea>
+
+                <div class="rp2-label" style="display:flex; justify-content:space-between">
+                    <span>막힌 범위</span><span id="rp2-radius-label">5m</span></div>
+                <input type="range" id="rp2-radius" min="1" max="30" step="1" value="5"
+                       style="width:100%" aria-label="막힌 범위(m)">
+
+                <div class="rp2-btns">
+                    <button class="rp2-save" type="button" id="rp2-save" disabled>등록</button>
+                    <button class="rp2-clear" type="button" id="rp2-clear">위치 지우기</button>
+                </div>
+                <div class="rp2-msg" id="rp2-msg" hidden></div>
             </section>
 
             <!-- ⑤ 최근경로 -->
@@ -471,7 +585,185 @@
 
         <div id="map"></div>
         <div id="geo" hidden></div>
+
+        <!--
+          ── 길 안내 도우미 (챗봇) ────────────────────────────────
+          ★ 레일 탭이 아니라 지도 위에 뜬 버튼(FAB)이다. 이유가 둘이다.
+            · 도보·버스·택시 어느 탭에서든 부를 수 있어야 한다.
+              탭으로 만들면 '지금 어느 탭인가'와 얽혀서 버스 탭에서 길을 물을 수 없다
+            · 탭으로 만들면 selectTab 의 ['map','bus','taxi'] 목록과
+              '준비 중' 핸들러에 같이 얽힌다 — 지도 버튼이 그 이유로 세 번 깨졌다
+
+          지도 오른쪽 아래는 비어 있다(카카오 기본 컨트롤을 안 붙였고,
+          정류장 칸 .side 는 지도 바깥 형제라 겹치지 않는다).
+        -->
+        <button class="chat-fab" id="chat-fab" type="button"
+                aria-label="길 안내 도우미 열기" title="길 안내 도우미">
+            <!--
+              ★ 아이콘을 직접 그린다. 카카오·구글 저작물을 쓰지 않는다 —
+              버스 정류장 마커를 인라인 SVG 로 그린 것과 같은 이유다.
+              파일이 안 늘고, 상태에 따라 색만 바꾸면 된다.
+            -->
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="16" cy="3.6" r="1.7" fill="currentColor" stroke="none"/>
+                <path d="M16 5.3V8"/>
+                <rect x="5" y="8" width="22" height="16" rx="6.5"/>
+                <circle cx="11.6" cy="15.2" r="1.9" fill="currentColor" stroke="none"/>
+                <circle cx="20.4" cy="15.2" r="1.9" fill="currentColor" stroke="none"/>
+                <path d="M12.6 19.4c1.3 1.1 5.5 1.1 6.8 0"/>
+                <path d="M2.6 13.6v5M29.4 13.6v5"/>
+            </svg>
+        </button>
+
+        <section class="chat" id="chat" hidden aria-label="길 안내 도우미">
+            <header class="chat-head">
+                <span class="chat-title">길 안내 도우미</span>
+                <button class="chat-close" id="chat-close" type="button" aria-label="닫기">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18"/>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- 대화가 위에서 아래로 쌓인다. 오인식했을 때 '무엇을 잘못 들었는지'가
+                 남아 있어야 사용자가 다시 말할지 고쳐 칠지 판단할 수 있다. -->
+            <div class="chat-log" id="chat-log"></div>
+
+            <div class="chat-foot">
+                <div class="chat-state" id="chat-state">마이크를 누르고 말씀하세요</div>
+
+                <!--
+                  ★ 마이크가 주인공이라 제일 크다(76px).
+                  Gemini 같은 일반 챗봇은 입력창이 주인공이지만, 이 서비스는
+                  밖에서 한 손으로 쓰는 상황이 기본이다.
+
+                  10초 자동 종료를 테두리 링이 줄어드는 것으로 보여준다 —
+                  '언제 끊기는지'를 글자로 적으면 읽어야 하지만 링은 보면 안다.
+                -->
+                <button class="chat-mic" id="chat-mic" type="button"
+                        aria-label="녹음 시작" title="누르면 녹음, 다시 누르면 종료">
+                    <svg class="chat-ring" viewBox="0 0 76 76" aria-hidden="true">
+                        <circle class="chat-ring-fg" cx="38" cy="38" r="35"/>
+                    </svg>
+                    <svg class="chat-mic-i" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <rect x="9" y="3" width="6" height="11" rx="3"/>
+                        <path d="M5 11a7 7 0 0 0 14 0"/>
+                        <path d="M12 18v3"/>
+                    </svg>
+                </button>
+
+                <!--
+                  타이핑도 받는다. 조용히 해야 하는 곳·시끄러운 곳에서 쓸 수 있고,
+                  마이크 권한을 거부했거나 오인식이 반복될 때 빠져나갈 길이 된다.
+                -->
+                <form class="chat-type" id="chat-type" autocomplete="off">
+                    <input id="chat-input" type="text" placeholder="또는 입력하세요">
+                    <button class="chat-send" type="submit" aria-label="보내기">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </section>
     </main>
+</div>
+
+<!--
+  ── 장소 등록 창 (집 / 회사 / 자주 가는 곳) ──────────────────────────
+
+  ★ 레일의 MY 탭이 아니라 바로가기 버튼에서 연다. 마이페이지가 아직 없기도 하지만,
+    등록이 필요해지는 순간이 '집 버튼을 눌렀는데 비어 있을 때' 라서 그 자리가 맞다.
+
+  ★ 회원가입에 넣지 않은 이유: 이미 가입한 사람은 집을 영영 못 넣게 되고,
+    개인정보 수집 항목이 늘어 PRIVACY_AGREED_AT 의 동의 범위를 다시 봐야 한다.
+
+  ★ 크기·색·알약 모양을 로그인 화면(auth.css .login-card)에서 그대로 가져왔다.
+    같은 서비스에서 '무언가를 입력하는 창'은 하나로 보여야 한다.
+
+  .shell 바깥에 둔다 — 안에 두면 레일·패널의 stacking context 에 갇혀서
+  화면 전체를 덮는 배경막을 칠 수 없다.
+-->
+<div class="place-modal" id="place-modal" hidden>
+    <!-- 배경막. 누르면 닫힌다. -->
+    <div class="place-backdrop" id="place-backdrop"></div>
+
+    <!--
+      ★ 로그인 카드와 같은 클래스를 쓴다 — .auth-card.login-card / .login-form-area /
+        .auth-field / .auth-input / .auth-button. 크기(565×376)·색·알약 모양이
+        전부 auth.css 에서 온다. .place-card 는 창으로 띄우는 데 필요한 것만 더한다.
+
+      ★ 로그인은 오른쪽 칸이 로고인데 여기는 지도다. 저장되는 값이 주소가 아니라 좌표라
+        지오코딩이 엉뚱한 동네를 집었을 때 주소 글자만으로는 알 수 없다.
+    -->
+    <section class="auth-card login-card place-card" role="dialog" aria-modal="true"
+             aria-labelledby="place-title">
+
+        <div class="login-form-area">
+            <h1 id="place-title">집 주소 설정</h1>
+            <p class="login-intro">등록해두면 길찾기 출발지로 바로 쓸 수 있습니다.</p>
+
+            <form id="place-form" autocomplete="off">
+                <!--
+                  ★ 주소 칸은 읽기 전용이다. 손으로 고친 주소는 좌표 변환에서 자주 엉뚱한 곳이
+                    잡히는데, 증상이 '그런 주소가 없다' 와 구분되지 않는다.
+                    반드시 [주소 찾기] 로 고르게 한다.
+
+                  ★ 여기 보이는 값은 "(28644) 충북 청주시…" 로 우편번호가 붙은 표시용이고,
+                    서버로는 우편번호를 뗀 원문과 우편번호를 따로 보낸다.
+                    (괄호를 붙여도 카카오는 견딘다 — 2026-08-21 8가지로 재봤다.
+                     그래도 나눠 보내는 것은 우편번호만 따로 쓸 일이 있어서다)
+
+                  ★ [주소 찾기] 를 칸 옆이 아니라 아래에 둔다. 옆에 두면 입력칸이 반토막이 나서
+                    로그인 화면의 칸과 폭이 달라진다 — 같아 보여야 하는 것이 이 창의 목적이다.
+                -->
+                <div class="auth-field">
+                    <label class="visually-hidden" for="place-addr">주소</label>
+
+                    <!--
+                      ★ 회원가입의 '중복확인'과 같은 붙임 방식이다 — 입력칸 오른쪽에 딱 붙고
+                        바깥쪽 모서리만 둥글다. 같은 서비스에서 '칸 옆에 붙는 보조 버튼'이
+                        두 가지 모양이면 안 된다.
+                    -->
+                    <div class="place-addr-group">
+                        <input class="auth-input" id="place-addr" type="text"
+                               placeholder="주소 입력" readonly>
+                        <button class="place-find" id="place-find" type="button">주소 찾기</button>
+                    </div>
+                </div>
+
+                <!-- 상세주소는 표시용이다. 좌표는 건물까지가 한계라 동·호수로는 안 달라진다. -->
+                <div class="auth-field">
+                    <label class="visually-hidden" for="place-detail">상세 주소</label>
+                    <input class="auth-input" id="place-detail" type="text"
+                           placeholder="상세 주소 입력" maxlength="100">
+                </div>
+
+                <!-- 실패 사유가 세 가지(못 찾음 / 지역 밖 / 검색 불가)라 그대로 적는다. -->
+                <p class="place-msg" id="place-msg" hidden></p>
+
+                <button class="auth-button" id="place-submit" type="submit">등록하기</button>
+            </form>
+        </div>
+
+        <div class="place-preview">
+            <div class="place-map" id="place-map"></div>
+            <p class="place-preview-note" id="place-preview-note">
+                주소를 고르면 여기에 위치가 표시됩니다.
+            </p>
+        </div>
+
+        <button class="place-close" id="place-close" type="button" aria-label="닫기">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18"/>
+            </svg>
+        </button>
+    </section>
 </div>
 
 <script src="/js/map.js"></script>

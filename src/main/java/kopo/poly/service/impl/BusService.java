@@ -1,11 +1,14 @@
 package kopo.poly.service.impl;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -42,6 +45,14 @@ public class BusService implements IBusService {
      * 한 번만 알린 뒤 메모리에만 쌓는 예전 동작으로 돌아간다.
      */
     private final kopo.poly.mapper.IBusSeenMapper seenMapper;
+
+    /**
+     * 노선별·시간대별 주행 속도를 살려 두는 표. <b>이것도 없어도 된다.</b>
+     *
+     * <p>{@link #seenMapper} 와 같은 규칙으로 다룬다 — 표가 없는 환경에서도 앱은 떠야 하므로
+     * 부르는 자리마다 예외를 잡고 한 번만 알린 뒤 메모리에만 쌓는 예전 동작으로 돌아간다.
+     */
+    private final kopo.poly.mapper.IBusSpeedMapper speedMapper;
 
     /** 지도가 보고 있는 지역. 버스 제공자도 이 값으로 고른다. */
     @Value("${wheelway.region-id}")
@@ -169,6 +180,51 @@ public class BusService implements IBusService {
      */
     private volatile List<BusStopDTO> allStops = null;
     private volatile long allStopsAtMs = 0;
+
+    /** 전체 목록 적재를 한 번에 하나만 돌게 한다. {@link #allStopsCached} 참고. */
+    private final Object allStopsLock = new Object();
+
+    /**
+     * 기동한 뒤 지역 전체 정류장 목록을 미리 받아둔다.
+     *
+     * <h3>왜 필요한가</h3>
+     * 이 목록을 처음 받는 데 <b>8~12초</b> 걸린다(청주 2,709곳, 2026-08-21 실측).
+     * 그 비용을 누가 무느냐의 문제인데, 안 데워두면 <b>그날 처음 쓰는 사람의 첫 동작</b>이 낸다.
+     * 챗봇에서 특히 나쁘다 — 목적지 이름을 고칠 후보를 이 목록으로 만들기 때문에
+     * 첫 질문이 통째로 10초가 된다. "느린 챗봇" 이라는 첫인상이 거기서 생긴다.
+     *
+     * <p>화면에서 미리 데워보려 했지만(챗봇 창을 열 때) 사용자가 문장을 치는 3초로는
+     * 8~12초를 못 가린다. 기동 때 받아두면 아무도 기다리지 않는다.
+     *
+     * <h3>기동을 막지 않는다</h3>
+     * 별도 스레드로 돌린다. TAGO 가 느리거나 죽어 있을 때 앱이 안 뜨면 안 된다 —
+     * 버스는 이 서비스의 일부일 뿐이고, 도보 안내는 버스 없이도 돌아야 한다.
+     * 실패해도 경고 한 줄만 남긴다. 그러면 예전처럼 처음 쓰는 사람이 비용을 낼 뿐이다.
+     *
+     * <p>제공자가 없는 지역(서울 TOPIS 처럼)에서는 {@code require()} 가 예외를 던진다.
+     * 그것도 여기서 삼킨다 — 이미 {@link #init} 이 경고를 남겼다.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmAllStops() {
+        Thread t = new Thread(() -> {
+            long begin = System.currentTimeMillis();
+            try {
+                List<BusStopDTO> stops = allStopsCached();
+                if (stops == null || stops.isEmpty()) {
+                    log.warn("정류장 목록을 미리 받지 못했습니다. 처음 쓰는 요청이 기다리게 됩니다.");
+                    return;
+                }
+                log.info("정류장 목록을 미리 받았습니다 · {}곳 ({}ms)",
+                        stops.size(), System.currentTimeMillis() - begin);
+
+            } catch (RuntimeException e) {
+                log.warn("정류장 목록 사전 적재 실패: {}", e.getMessage());
+            }
+        }, "bus-stops-warmup");
+
+        t.setDaemon(true);      // 이것 때문에 종료가 늦어지면 안 된다
+        t.start();
+    }
 
     /**
      * 정류장별 경유노선 캐시. {@code stopId → 노선 목록}.
@@ -308,6 +364,12 @@ public class BusService implements IBusService {
           표가 없으면 조용히 예전 방식(메모리에만)으로 돈다.
         */
         loadSeen();
+
+        /*
+          주행 속도도 이어받는다. 저상 관측과 달리 순서에 매인 것이 없어(정류장 표를
+          다시 만들 필요가 없다) 뒤에 둔다. 표가 없으면 조용히 메모리로 돈다.
+        */
+        loadSpeed();
     }
 
     @Override
@@ -443,7 +505,30 @@ public class BusService implements IBusService {
         long now = System.currentTimeMillis();
         List<BusStopDTO> cached = allStops;
 
-        if (cached == null || now - allStopsAtMs >= ROUTE_HOURS_TTL_MS) {
+        // 있으면 잠그지 않고 그대로 준다. 여기가 압도적으로 자주 도는 길이다.
+        if (cached != null && now - allStopsAtMs < ROUTE_HOURS_TTL_MS) {
+            return cached;
+        }
+
+        /*
+          ★ 적재는 한 번에 하나만 돈다.
+
+          전에는 잠금이 없어서, 캐시가 비어 있는 동안 들어온 요청이 <b>각자</b> 전체 목록을
+          받아왔다. 청주 기준 한 번이 약 8초라, 두 요청이 겹치면 뒤엣것이 12초를 기다린다 —
+          2026-08-21 챗봇을 붙이며 실제로 그렇게 됐다(창을 열며 미리 데우는 요청과
+          사용자의 첫 질문이 겹쳤다).
+
+          느린 것보다 나쁜 것은 <b>같은 일을 두 번 하는 것</b>이다. TAGO 호출도 두 배가 된다.
+          기다리게 하되 한 번만 받는다.
+        */
+        synchronized (allStopsLock) {
+            // 잠금을 기다리는 동안 다른 쪽이 채워놨을 수 있다. 그러면 그걸 쓴다.
+            cached = allStops;
+            now = System.currentTimeMillis();
+            if (cached != null && now - allStopsAtMs < ROUTE_HOURS_TTL_MS) {
+                return cached;
+            }
+
             List<BusStopDTO> loaded = c.allStops();
             // 빈 결과는 담지 않는다 — 담으면 하루 동안 '정류장 없는 지역'이 된다.
             if (!loaded.isEmpty()) {
@@ -799,7 +884,8 @@ public class BusService implements IBusService {
        몰아치면 오류가 아니라 빈 응답이 온다(여러 번 겪었다). */
 
     /**
-     * 노선번호 → {@code {누적 거리(m), 누적 시간(초)}}. <b>실제로 달린 것을 잰 값이다.</b>
+     * 노선번호 → <b>시간대별</b> {@code {누적 거리(m), 누적 시간(초)}}.
+     * <b>실제로 달린 것을 잰 값이다.</b>
      *
      * <p><b>추가 호출이 0 이다.</b> 도착정보에는 '몇 정거장 앞에 있고 몇 초 뒤 도착'이 같이 온다.
      * 그 버스가 지금 어느 정류장 근처인지는 경유 정류장 목록에서 순번을 세면 나오고,
@@ -813,11 +899,58 @@ public class BusService implements IBusService {
      *
      * <p>거리와 시간을 <b>따로</b> 쌓고 나중에 나눈다. 속도를 매번 평균 내면
      * 3초짜리 관측과 300초짜리 관측이 같은 무게가 된다.
+     *
+     * <p><b>배열 한 줄에 시간대를 모두 담는다</b> — {@code [심야m, 심야초, 첨두m, 첨두초, ...]}.
+     * 버킷마다 맵을 따로 두지 않는 이유는 잠그는 단위를 하나로 두려는 것이다.
+     * 한 노선의 여러 버킷을 동시에 건드릴 일이 없어서 배열 하나를 잠그면 충분하다.
      */
     private final Map<String, double[]> routeSpeed = new ConcurrentHashMap<>();
 
     /** 이만큼은 쌓여야 속도를 말한다(초). 한 대만 보고 정하면 그 차의 신호운이 그대로 들어간다. */
     private static final double SPEED_MIN_SEC = 180;
+
+    /* ── 시간대 ────────────────────────────────────────────────
+       ★ 왜 나누는가: 같은 노선이 시간대에 따라 다른 속도로 간다. 노선 21개를
+       토요일 00:03 과 17:31 에 각각 재서 짝지어 봤다(2026-08-22 청주).
+
+           자정 22.0 km/h  →  저녁 15.5 km/h     0.74배 · 21개 중 19개가 느려졌다
+           509 는 22.6 → 8.6, 313 은 25.9 → 12.4 로 절반 아래까지 떨어졌다
+
+       나누지 않으면 이 차이가 한 평균으로 뭉개진다. 그러면 자정에는 과소평가하고
+       저녁에는 과대평가하는데, 둘 다 '실측'이라는 얼굴로 나간다.
+
+       ★ 왜 셋뿐인가: 근거가 있는 만큼만 나눈다. 잰 것은 두 시점이고, 버킷을 늘릴수록
+       버킷마다 표본이 얇아져 상수로 떨어지는 일이 잦아진다. 요일(평일·주말)로 더 쪼개는 것도
+       같은 이유로 아직 하지 않았다 — 평일을 재보고 차이가 크면 그때 늘린다. */
+
+    /** 심야. 도로가 비어 가장 빠르다. */
+    private static final int BUCKET_NIGHT = 0;
+
+    /** 첨두. 출퇴근이라 가장 느리다. */
+    private static final int BUCKET_PEAK = 1;
+
+    /** 그 밖의 낮 시간. */
+    private static final int BUCKET_DAY = 2;
+
+    /** 시간대 개수. {@link #routeSpeed} 배열 길이가 이 값의 두 배다. */
+    private static final int SPEED_BUCKETS = 3;
+
+    /**
+     * 이 시각이 어느 시간대인가.
+     *
+     * <p>경계는 <b>여기서만</b> 정한다. DB 의 {@code BUCKET} 값도 이 함수가 낸 것이라,
+     * 경계를 옮기면 쌓아 둔 값의 뜻이 달라진다 — 그때는 표를 비우고 다시 쌓아야 한다.
+     */
+    static int speedBucket(LocalTime t) {
+        int h = t.getHour();
+        if (h >= 22 || h < 7) {
+            return BUCKET_NIGHT;
+        }
+        if (h < 9 || (h >= 17 && h < 20)) {
+            return BUCKET_PEAK;
+        }
+        return BUCKET_DAY;
+    }
 
     /**
      * 노선을 따라가는 거리가 직선의 몇 배까지면 '그 방향으로 가는 것'으로 볼지.
@@ -834,6 +967,12 @@ public class BusService implements IBusService {
      * 도착 안내 한 번에 노선 수만큼 호출이 나간다 — 이 함수는 곁다리라 그럴 자격이 없다.
      */
     private void observeSpeed(String stopId, List<BusArrivalDTO> arrivals) {
+        /*
+          시간대는 한 번만 정한다. 이 응답에 담긴 도착은 전부 같은 순간에 받은 것이라
+          도착마다 다시 보면 자정을 넘기는 찰나에만 갈리고, 그 한 건을 위해 매번 볼 이유가 없다.
+        */
+        int bucket = speedBucket(LocalTime.now());
+
         for (BusArrivalDTO a : arrivals) {
             if (a.routeId() == null || a.routeNo() == null
                     || a.arriveSec() == null || a.prevStationCount() == null) {
@@ -871,10 +1010,11 @@ public class BusService implements IBusService {
                 continue;
             }
 
-            double[] acc = routeSpeed.computeIfAbsent(a.routeNo(), k -> new double[2]);
+            double[] acc = routeSpeed.computeIfAbsent(a.routeNo(),
+                    k -> new double[SPEED_BUCKETS * 2]);
             synchronized (acc) {
-                acc[0] += m;
-                acc[1] += a.arriveSec();
+                acc[bucket * 2] += m;
+                acc[bucket * 2 + 1] += a.arriveSec();
             }
         }
     }
@@ -981,14 +1121,162 @@ public class BusService implements IBusService {
         t.start();
     }
 
-    /** 관측으로 얻은 그 노선의 주행 속도(m/s). 아직 얕으면 {@code null} — 지어내지 않는다. */
+    /* ── 주행 속도 관측을 살려 둔다 (BUS_ROUTE_SPEED) ────────────
+       ★ 저상 관측과 표를 따로 두는 이유는 IBusSpeedMapper 에 적어 두었다.
+
+       ★ 이 표가 없으면 재기동 직후 모든 노선이 상수 19km/h 로 떨어진다. 그 값은
+       실측 대비 평균 27.9% 틀린다(청주 61개 노선, 2026-08-22). 시간대로 쪼갠 뒤로는
+       버킷마다 따로 채워야 해서, 살려 두지 않으면 저녁 값을 얻으려고 저녁까지 기다리게 된다.
+
+       ★ 표가 없어도 앱은 그대로 돈다. 저상 관측과 똑같이 한 번만 알리고 메모리로 돌아간다. */
+
+    /** 이 표를 쓸 수 있는가. 한 번 실패하면 끄고 다시 건드리지 않는다. */
+    private volatile boolean speedTable = true;
+
+    /** 마지막으로 DB 에 적은 때. */
+    private volatile long speedFlushAtMs = 0;
+
+    /** 얼마나 자주 적을지. 저상 관측과 같은 이유로 짧게 잡지 않는다 — 잃어도 금방 다시 찬다. */
+    private static final long SPEED_FLUSH_MS = 5 * 60_000L;
+
+    /**
+     * 쌓아 둔 주행 속도를 읽어 온다. 기동할 때 한 번.
+     *
+     * <p>{@link #loadSeen} 과 달리 <b>세대 번호를 올리지 않는다.</b> 저상 관측은 읽는 순간
+     * '어느 노선이 저상인가'가 바뀌어 정류장 표를 다시 만들어야 하지만, 속도는 그저
+     * 계산에 쓰이는 값이라 읽어 두기만 하면 된다.
+     */
+    private void loadSpeed() {
+        if (speedMapper == null) {
+            return;
+        }
+        try {
+            List<kopo.poly.dto.RouteSpeedDTO> rows = speedMapper.getSpeeds(regionId);
+            for (kopo.poly.dto.RouteSpeedDTO r : rows) {
+                int b = r.bucket();
+                if (b < 0 || b >= SPEED_BUCKETS) {
+                    /*
+                      버킷 경계를 옮긴 뒤 남은 옛 행이다. 조용히 버린다 —
+                      뜻이 달라진 값을 그대로 쓰면 틀린 시각을 자신 있게 말하게 된다.
+                    */
+                    continue;
+                }
+                double[] acc = routeSpeed.computeIfAbsent(r.routeNo(),
+                        k -> new double[SPEED_BUCKETS * 2]);
+                synchronized (acc) {
+                    acc[b * 2] = r.meters();
+                    acc[b * 2 + 1] = r.seconds();
+                }
+            }
+            if (!rows.isEmpty()) {
+                log.info("주행 속도 관측을 이어받았습니다 · {}행 / 노선 {}개",
+                        rows.size(), routeSpeed.size());
+            }
+        } catch (RuntimeException e) {
+            /* 표가 아직 없는 것이 가장 흔한 원인이다. loadSeen 과 같은 판단이다. */
+            speedTable = false;
+            log.info("주행 속도 표를 쓸 수 없어 메모리에만 쌓습니다 (BUS_ROUTE_SPEED): {}",
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * 쌓인 주행 속도를 통째로 적는다. 요청 안에서 하지 않는다 — 줄 수만큼 UPDATE 가 나간다.
+     *
+     * <p><b>안 쌓인 버킷은 건너뛴다.</b> 노선 하나가 시간대 셋을 다 채우는 일은 드물다
+     * (그 시간에 안 다니는 노선이 많다). 빈 버킷까지 적으면 쓰는 줄이 세 배가 되는데
+     * 얻는 것은 {@code 0} 이라는 사실뿐이다.
+     */
+    private void flushSpeedIfDue() {
+        if (!speedTable || speedMapper == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - speedFlushAtMs < SPEED_FLUSH_MS) {
+            return;
+        }
+
+        /*
+          ★ 빈손이면 시계를 앞당기지 않는다.
+
+          기동 직후가 정확히 그렇다. observeSpeed 는 경유 정류장을 이미 받아 둔 노선만 세는데
+          (routeStopsCache), 그 표는 백그라운드로 천천히 찬다. 그래서 첫 도착정보 몇 번은
+          아무것도 못 쌓고 지나간다.
+
+          그때 speedFlushAtMs 를 갱신해 버리면 <b>빈 채로 5분을 잠가</b> 정작 관측이 쌓이기
+          시작한 뒤에도 한참을 못 적는다. 실제로 그렇게 됐다(2026-08-22, 첫 확인에서 0행).
+          적을 것이 없으면 그냥 물러나고 다음 호출에서 다시 본다.
+        */
+        if (routeSpeed.isEmpty()) {
+            return;
+        }
+        speedFlushAtMs = now;
+
+        Thread t = new Thread(() -> {
+            try {
+                routeSpeed.forEach((no, acc) -> {
+                    for (int b = 0; b < SPEED_BUCKETS; b++) {
+                        double m;
+                        double s;
+                        synchronized (acc) {
+                            m = acc[b * 2];
+                            s = acc[b * 2 + 1];
+                        }
+                        if (s <= 0) {
+                            continue;       // 이 시간대에는 이 노선을 못 봤다
+                        }
+                        speedMapper.upsertSpeed(
+                                new kopo.poly.dto.RouteSpeedDTO(regionId, no, b, m, s));
+                    }
+                });
+            } catch (RuntimeException e) {
+                speedTable = false;
+                log.warn("주행 속도를 적지 못했습니다: {}", e.getMessage());
+            }
+        }, "route-speed-flush");
+
+        t.setDaemon(true);      // 이것 때문에 서버가 안 내려가면 안 된다
+        t.start();
+    }
+
+    /**
+     * 관측으로 얻은 그 노선의 주행 속도(m/s). 아직 얕으면 {@code null} — 지어내지 않는다.
+     *
+     * <p><b>지금 시간대의 값을 먼저 본다.</b> 그것이 이 표를 시간대로 쪼갠 이유다 —
+     * 저녁에 물으면 저녁에 잰 값으로 답해야 한다.
+     *
+     * <p><b>얇으면 하루 전체로 물러선다.</b> 이 물러섬이 있어야 시간대를 나눈 것이
+     * 손해가 되지 않는다. 나누기 전에는 하루치가 한 덩어리로 쌓여 금방 {@code SPEED_MIN_SEC}
+     * 를 넘겼는데, 나눈 뒤로는 버킷마다 따로 채워야 한다. 물러설 곳이 없으면
+     * <b>나누자마자 상수로 떨어지는 노선이 늘어난다</b> — 정확해지려다 나빠지는 셈이다.
+     *
+     * <pre>
+     *   ① 지금 시간대에 충분히 쌓였나        → 그 값 (가장 정확하다)
+     *   ② 아니면 하루 전체를 합쳐 충분한가    → 그 값 (나누기 전과 같은 값이다)
+     *   ③ 둘 다 아니면                        → null, 부르는 쪽이 상수로 어림한다
+     * </pre>
+     */
     private Double observedSpeedMps(String routeNo) {
         double[] acc = routeSpeed.get(routeNo);
         if (acc == null) {
             return null;
         }
+        int bucket = speedBucket(LocalTime.now());
+
         synchronized (acc) {
-            return acc[1] < SPEED_MIN_SEC ? null : acc[0] / acc[1];
+            // ① 지금 시간대
+            if (acc[bucket * 2 + 1] >= SPEED_MIN_SEC) {
+                return acc[bucket * 2] / acc[bucket * 2 + 1];
+            }
+
+            // ② 하루 전체
+            double m = 0;
+            double s = 0;
+            for (int b = 0; b < SPEED_BUCKETS; b++) {
+                m += acc[b * 2];
+                s += acc[b * 2 + 1];
+            }
+            return s < SPEED_MIN_SEC ? null : m / s;
         }
     }
 
@@ -1182,6 +1470,7 @@ public class BusService implements IBusService {
 
         // 쌓인 횟수를 이따금 DB 에 적는다(5분에 한 번, 백그라운드).
         flushSeenIfDue();
+        flushSpeedIfDue();
 
         /*
           ★ 전에는 '도착정보가 비었을 때만' 경유노선을 불렀다. 호출을 아끼려던 것인데,

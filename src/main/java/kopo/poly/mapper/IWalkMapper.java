@@ -29,6 +29,18 @@ public interface IWalkMapper {
                                    @Param("stopName") String stopName);
 
     /**
+     * 그 사람이 잰 기록 <b>전부</b>. 정류장으로 나누지 않는다.
+     *
+     * <p>{@link #getRecords} 와 따로 두는 이유: 그쪽은 정류장 하나에 묶인 기록만 준다.
+     * 안내에 쓰는 값이 정류장별로 나오기 때문인데, <b>속도(m/분)는 정류장을 안 가리고
+     * 전부에서 낸다.</b> 그래서 '지금 안내가 왜 이 숫자인가'를 확인하려면
+     * 정류장으로 나뉘지 않은 목록이 있어야 한다.
+     *
+     * <p>제외 표시한 것도 준다 — 무엇이 빠졌는지 보이는 것이 이 목록의 목적이다.
+     */
+    List<WalkRecordDTO> getAllRecords(@Param("username") String username);
+
+    /**
      * 속도 계산에 쓸 기록만. {@code EXCLUDED_YN='N'} 이고 소요시간이 정상인 것.
      *
      * <p><b>왜 걸러야 하는가</b>: [출발] 을 누르고 바로 [도착] 을 누른 기록(0초에 가까움)이나,

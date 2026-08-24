@@ -102,7 +102,7 @@ public class GraphHolder {
      * 이미 지운 엣지를 또 지우려 하거나, 좌표가 그래프에서 멀 때다.
      * 이걸 안 알려주면 사용자는 성공한 줄 알고 넘어간다.
      */
-    private ManualEdges.Result lastManual = new ManualEdges.Result(0, 0, 0, 0, List.of());
+    private ManualEdges.Result lastManual = new ManualEdges.Result(0, 0, 0, java.util.Map.of());
 
     private RouteGraph graph;
 
@@ -120,19 +120,36 @@ public class GraphHolder {
         ManualEdges.Result mr = ManualEdges.apply(nodes, edges, manual,
                 manualSnapMaxM, manualEdgeMaxM, manualMatchMaxM, -1L);
         lastManual = mr;
-        if (!manual.isEmpty()) {
-            log.info("수동 엣지 {}건 반영 — 삭제 {}개 / 추가 {}개 / 분할 노드 {}개 / 실패 {}건",
-                    manual.size(), mr.removed(), mr.added(), mr.splitNodes(), mr.failed());
-            mr.problems().forEach(s -> log.warn("수동 엣지: {}", s));
-        }
 
         // 교차로와 '이미 그려진' 보도를 잇는다. DB 에는 쓰지 않고 메모리 그래프에만 더한다 —
         // 원본 OSM 적재를 건드리지 않아야 재적재해도 같은 결과가 나온다.
         if (connectorMaxM > 0) {
             long nextId = -1L - mr.added();
-            List<EdgeDTO> links = SidewalkConnector.build(nodes, edges, connectorMaxM, nextId);
+            // 사람이 직접 찍은 노드는 빼고 잇는다. 손으로 그린 보도를 옆 도로가 자동으로
+            // 물어가면 '잇지도 않은 도보와 차도가 이어진' 그래프가 된다.
+            List<EdgeDTO> links = SidewalkConnector.build(nodes, edges, connectorMaxM, nextId,
+                    mr.addedNodeIds());
             edges.addAll(links);
-            log.info("보도 연결 엣지 {}개 추가 (교차로 기준 {}m 이내)", links.size(), connectorMaxM);
+            log.info("보도 연결 엣지 {}개 추가 (교차로 기준 {}m 이내, 수동 노드 {}개 제외)",
+                    links.size(), connectorMaxM, mr.addedNodeIds().size());
+
+            /*
+             * ★ 연결 엣지가 붙은 뒤에 '대상을 못 찾은 삭제' 를 한 번 더 시도한다.
+             * 자동 연결 엣지는 여기서야 존재하므로, 그것을 지우라는 기록은 1차에서 볼 수가 없다.
+             * 이걸 안 하면 관리자가 화면에서 분명히 클릭해 지운 선이 영영 안 지워진다.
+             */
+            int before = mr.failed();
+            mr = ManualEdges.retryRemovals(nodes, edges, manual, manualMatchMaxM, mr);
+            lastManual = mr;
+            if (before != mr.failed()) {
+                log.info("연결 엣지까지 보고 삭제 {}건을 더 반영했다", before - mr.failed());
+            }
+        }
+
+        if (!manual.isEmpty()) {
+            log.info("수동 엣지 {}건 반영 — 삭제 {}개 / 추가 {}개 / 분할 노드 {}개 / 실패 {}건",
+                    manual.size(), mr.removed(), mr.added(), mr.splitNodes(), mr.failed());
+            mr.problems().forEach(s -> log.warn("수동 엣지: {}", s));
         }
 
         graph = RouteGraph.build(regionId, nodes, edges, this::weightOf);

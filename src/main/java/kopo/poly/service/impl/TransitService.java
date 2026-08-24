@@ -49,6 +49,14 @@ public class TransitService implements ITransitService {
     private final IRouteService routeService;
 
     /**
+     * 버스 구간을 도로 모양으로 그리기 위한 좌표열. <b>없어도 된다.</b>
+     *
+     * <p>못 받으면 정류장을 직선으로 이은 원래 선을 그대로 쓴다 — 선이 거친 것은 불편이고
+     * 경로가 안 나오는 것은 고장이라, 이것 때문에 안내가 실패하면 안 된다.
+     */
+    private final kopo.poly.bus.KakaoRoadPath roadPath;
+
+    /**
      * 정류장까지 걸어갈 수 있다고 볼 최대 거리(m).
      *
      * <p>넘는 후보는 아예 안 본다. 휠체어로 1.2km 는 도보 20분이 넘는 거리라,
@@ -151,13 +159,17 @@ public class TransitService implements ITransitService {
             */
             String k1 = "s" + l.board().stopId();
             if (!walkCache.containsKey(k1)) {
-                walkCache.put(k1, walkLeg(startLat, startLng,
-                        l.board().latitude(), l.board().longitude()));
+                TransitPlanDTO.Leg leg = walkLeg(startLat, startLng,
+                        l.board().latitude(), l.board().longitude());
+                // 걸어가는 끝은 '타는 정류장'이다. 거기서 끊어져야 버스 선과 만난다.
+                walkCache.put(k1, anchor(leg, l.board().latitude(), l.board().longitude(), false));
             }
             String k2 = "e" + l.alight().stopId();
             if (!walkCache.containsKey(k2)) {
-                walkCache.put(k2, walkLeg(l.alight().latitude(), l.alight().longitude(),
-                        endLat, endLng));
+                TransitPlanDTO.Leg leg = walkLeg(l.alight().latitude(), l.alight().longitude(),
+                        endLat, endLng);
+                // 걸어가는 시작은 '내리는 정류장'이다. 버스에서 내린 자리가 곧 출발점이다.
+                walkCache.put(k2, anchor(leg, l.alight().latitude(), l.alight().longitude(), true));
             }
 
             TransitPlanDTO.Leg w1 = walkCache.get(k1);
@@ -252,11 +264,25 @@ public class TransitService implements ITransitService {
             log.debug("도착 정보를 붙이지 못했습니다 ({}번): {}", l.routeNo(), e.getMessage());
         }
 
+        /*
+          ★ 지도에 그릴 선만 도로 모양으로 바꾼다. <b>여기서 하는 이유는 호출을 아끼려는 것이다.</b>
+          링크는 40개까지 만들어졌다가 여기까지 서넛만 살아남으므로, 앞에서 바꾸면
+          버려질 것까지 카카오를 부르게 된다.
+
+          거리(rideMeters)는 <b>일부러 안 건드린다.</b> 그 값은 정류장 직선합인데,
+          시간(rideMin)도 같은 직선합으로 잰 속도에서 나오므로 둘의 오차가 서로 지워진다.
+          거리만 도로값으로 바꾸면 그 상쇄가 깨져서, 더 정확한 거리가 오히려
+          덜 맞는 시간을 만든다.
+        */
+        List<double[]> line = roadPath.alongRoad(
+                l.routeId() + ">" + l.board().stopId() + ">" + l.alight().stopId(), l.path());
+
         return new TransitPlanDTO(l.routeId(), l.routeNo(), l.board(), l.alight(),
                 s.walk1(),
                 new TransitPlanDTO.Ride(l.rideMeters(),
                         l.rideMin() == null ? 0 : l.rideMin(),
-                        l.rideSource(), l.stopCount(), l.path()),
+                        l.rideSource(), l.stopCount(),
+                        anchorRide(line != null ? line : l.path(), l.board(), l.alight())),
                 s.walk2(), arriveSec, tt);
     }
 
@@ -291,5 +317,84 @@ public class TransitService implements ITransitService {
             return null;
         }
         return new TransitPlanDTO.Leg((int) Math.round(r.getDistanceM()), r.getPath());
+    }
+
+    /**
+     * 이 정도 안에 있으면 이미 붙은 것으로 본다(m). 좌표 반올림 수준의 차이까지 손대지 않는다.
+     */
+    private static final double ANCHOR_SKIP_M = 1.0;
+
+    /**
+     * 좌표열의 한쪽 끝을 정류장 자리에 정확히 붙인다.
+     *
+     * <h3>왜 필요한가</h3>
+     * 세 구간이 각자 다른 곳에 스냅돼서 이음새가 벌어진다(2026-08-22 실측: 6~20m).
+     * <pre>
+     *   정류장          도로 위의 점
+     *   도보 경로 끝    인도 위의 그래프 노드   ← 정류장과 다르다
+     *   버스 선 끝      카카오가 잡은 차도 위 점 ← 이것도 다르다
+     * </pre>
+     * 그래서 지도에서 <b>버스 선이 끝난 자리와 도보 선이 시작하는 자리가 어긋나 보인다.</b>
+     * 사용자가 보기에 이것은 '내린 곳에서 안내가 시작되지 않는' 것으로 읽힌다.
+     *
+     * <h3>거리는 늘리지 않는다</h3>
+     * 붙이는 것은 <b>선뿐이고 {@code meters} 는 그대로 둔다.</b> 이 몇 미터는 그래프가
+     * 실제로 갈 수 있다고 확인해 준 길이 아니라 우리가 이어 그린 직선이다.
+     * 그것을 '휠체어 경로로 잰 거리'에 더하면, 못 건널 수도 있는 구간을
+     * 건널 수 있다고 잰 것처럼 말하게 된다. 그릴 뿐 세지는 않는다.
+     *
+     * @param atStart {@code true} 면 맨 앞에, {@code false} 면 맨 뒤에 붙인다
+     */
+    private static TransitPlanDTO.Leg anchor(TransitPlanDTO.Leg leg,
+                                             double lat, double lng, boolean atStart) {
+
+        if (leg == null) {
+            return null;
+        }
+        return new TransitPlanDTO.Leg(leg.meters(), anchorPath(leg.path(), lat, lng, atStart));
+    }
+
+    /** {@link #anchor} 의 알맹이. 좌표열만 다룬다 — 버스 선에는 담을 {@code Leg} 가 없다. */
+    private static List<double[]> anchorPath(List<double[]> path,
+                                             double lat, double lng, boolean atStart) {
+
+        if (path == null || path.isEmpty()) {
+            return path;
+        }
+        double[] end = atStart ? path.get(0) : path.get(path.size() - 1);
+
+        if (metersBetween(end[0], end[1], lat, lng) <= ANCHOR_SKIP_M) {
+            return path;    // 이미 붙어 있다
+        }
+
+        List<double[]> out = new ArrayList<>(path.size() + 1);
+        if (atStart) {
+            out.add(new double[] { lat, lng });
+            out.addAll(path);
+        } else {
+            out.addAll(path);
+            out.add(new double[] { lat, lng });
+        }
+        return out;
+    }
+
+    /** 두 좌표 사이 거리(m). 이음새가 벌어졌는지 보는 데만 쓴다. */
+    private static double metersBetween(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371000.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 2 * r * Math.asin(Math.sqrt(h));
+    }
+
+    /** 버스 선의 양 끝도 정류장에 붙인다. 도보만 붙이면 이번엔 버스 쪽이 떠 보인다. */
+    private static List<double[]> anchorRide(List<double[]> path,
+                                             kopo.poly.dto.RouteStopDTO board,
+                                             kopo.poly.dto.RouteStopDTO alight) {
+
+        List<double[]> out = anchorPath(path, board.latitude(), board.longitude(), true);
+        return anchorPath(out, alight.latitude(), alight.longitude(), false);
     }
 }

@@ -15,6 +15,14 @@ public interface IWalkService {
     List<WalkRecordDTO> list(String username, String stopName);
 
     /**
+     * 그 사람이 잰 기록 <b>전부</b>(정류장 무관, 제외 표시 포함). 각 건에 속도를 채워 준다.
+     *
+     * <p>안내에 쓰는 속도는 정류장을 안 가리고 전부에서 나오므로, 그 값을 확인하려면
+     * 이 목록이 있어야 한다. {@link #list} 는 정류장 하나만 보여준다.
+     */
+    List<WalkRecordDTO> listAll(String username);
+
+    /**
      * 기록 한 건을 저장한다. {@code startedAt}·{@code arrivedAt} 은 {@code yyyy-MM-dd HH:mm:ss}.
      *
      * @throws IllegalArgumentException 거리가 0 이하이거나 도착이 출발보다 이를 때

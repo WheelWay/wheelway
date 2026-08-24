@@ -31,6 +31,12 @@ import kopo.poly.dto.NodeDTO;
  * <h3>하지 않는 것</h3>
  * 보도를 새로 그리지 않는다. 노드를 옮기지 않는다. 대로를 양쪽으로 쪼개지 않는다.
  * 쪼개려면 횡단보도 데이터가 필요한데 OSM 에 절반도 없다는 것을 측정으로 확인했다.
+ *
+ * <p><b>★ 사람이 직접 찍은 노드도 건드리지 않는다({@code keepOut}).</b>
+ * 관리자가 없는 보도를 손으로 그리면 그 끝점이 '보도가 붙은 노드' 가 되는데,
+ * 그러면 20m 안 도로 교차로가 그 점을 자동으로 물어간다. 관리자 눈에는
+ * <b>잇지도 않은 도보와 차도가 저절로 이어진 것</b>으로 보인다.
+ * 손으로 그린 자리는 사람이 이미 판단한 자리다 — 자동 연결이 끼어들 이유가 없다.
  */
 public final class SidewalkConnector {
 
@@ -44,11 +50,13 @@ public final class SidewalkConnector {
     }
 
     /**
-     * @param maxM   교차로에서 이만큼 안에 있는 보도 노드만 잇는다
-     * @param nextId 합성 엣지에 붙일 첫 ID. <b>음수</b>여야 실제 {@code EDGES.ID} 와 겹치지 않는다
+     * @param maxM    교차로에서 이만큼 안에 있는 보도 노드만 잇는다
+     * @param nextId  합성 엣지에 붙일 첫 ID. <b>음수</b>여야 실제 {@code EDGES.ID} 와 겹치지 않는다
+     * @param keepOut 자동 연결에서 <b>제외</b>할 노드. 사람이 직접 찍은 것들이 여기 들어온다
      * @return 추가할 엣지들(양방향이라 항상 짝수 개)
      */
-    public static List<EdgeDTO> build(List<NodeDTO> nodes, List<EdgeDTO> edges, double maxM, long nextId) {
+    public static List<EdgeDTO> build(List<NodeDTO> nodes, List<EdgeDTO> edges, double maxM, long nextId,
+                                      Set<Long> keepOut) {
         Map<Long, NodeDTO> byId = new HashMap<>(nodes.size() * 2);
         for (NodeDTO n : nodes) {
             byId.put(n.getId(), n);
@@ -82,6 +90,9 @@ public final class SidewalkConnector {
             if (en.getValue()[1] == 0) {
                 continue;                         // 보도가 안 붙은 노드
             }
+            if (keepOut.contains(en.getKey())) {
+                continue;                         // 사람이 직접 찍은 노드 - 자동으로 물어가지 않는다
+            }
             NodeDTO n = byId.get(en.getKey());
             if (n != null) {
                 grid.computeIfAbsent(cellKey(n.getLatitude(), n.getLongitude(), cell),
@@ -98,7 +109,7 @@ public final class SidewalkConnector {
                 continue;   // 교차로가 아니거나, 도로가 아니거나, 이미 보도가 붙어 있다
             }
             NodeDTO j = byId.get(en.getKey());
-            if (j == null) {
+            if (j == null || keepOut.contains(en.getKey())) {
                 continue;
             }
 

@@ -107,6 +107,37 @@ public class WalkController {
     }
 
     /**
+     * 지금 로그인한 사람이 잰 기록 <b>전부</b>와, 그 기록으로 낸 속도.
+     *
+     * <p><b>왜 따로 두는가</b>: 위 {@code list} 는 정류장 하나에 묶인 기록만 준다.
+     * 그런데 안내에 쓰는 속도(m/분)는 <b>정류장을 안 가리고 전부</b>에서 나온다 —
+     * 그래서 '도보가 왜 26분이지'를 확인하려 해도 그 값을 만든 기록이 화면에 안 보였다.
+     * 실제로 그렇게 됐다(2026-08-24: 보은에서 잰 기록 두 건이 청주 안내를 지배했다).
+     *
+     * <p><b>남의 기록은 안 준다.</b> 관리자 화면에서 부르지만 기준은 어디까지나
+     * '지금 로그인한 세션'이다 — 화면이 관리자용이라는 것과 그 화면이 남의 개인 기록을
+     * 봐도 된다는 것은 전혀 다른 말이다.
+     *
+     * <p>속도를 같이 주는 이유: 목록만 보면 '이 기록들이 합쳐져 얼마가 됐나'를
+     * 사람이 손으로 계산해야 한다. 그 값이 이 화면이 답하려는 것이다.
+     */
+    @GetMapping("/all")
+    public ResponseEntity<?> all(HttpSession session) {
+        String username = loginId(session);
+        if (username == null) {
+            return needLogin();
+        }
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("username", username);
+        out.put("records", walkService.listAll(username));
+
+        // stopName 은 null 로 둔다 — 여기서 보려는 것은 정류장별 값이 아니라 속도·배수다.
+        out.put("speed", speedMap(walkService.speedOf(username, null)));
+        return ResponseEntity.ok(out);
+    }
+
+    /**
      * 도착해서 [도착] 을 눌렀을 때 한 건을 남긴다.
      *
      * <p>진행 중인 이동은 서버에 두지 않는다. [출발] 만 누르고 안 돌아오는 일이 반드시 생기는데,

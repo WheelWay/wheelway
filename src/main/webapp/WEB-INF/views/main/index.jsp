@@ -9,7 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WheelWay</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/main.css?v=20260820-1" rel="stylesheet">
+    <link href="/css/main.css?v=20260824-2" rel="stylesheet">
 </head>
 <body class="main-body">
 <main class="main-shell">
@@ -140,6 +140,17 @@
                     <div class="modal-back-row"><a href="#loginModal" data-modal-panel="loginPanel">로그인으로 돌아가기</a></div>
                 </form>
             </div>
+            <!--
+              아이디 찾기 결과. 예전에는 폼이 그냥 submit 돼서 /user/searchUserIdResult
+              한 장으로 넘어갔는데, 모달을 열어놓고 쓰던 흐름이 거기서 끊겼다.
+              같은 창 안에서 패널만 바꾼다.
+            -->
+            <div id="findIdResultPanel" class="modal-panel">
+                <h1>아이디 찾기 결과</h1>
+                <p id="findIdResultMessage" class="modal-result-message"></p>
+                <a class="modal-login-submit" href="#loginModal" data-modal-panel="loginPanel">로그인</a>
+                <div class="modal-back-row"><a href="#loginModal" data-modal-panel="findIdPanel">다시 찾기</a></div>
+            </div>
             <div id="findPasswordPanel" class="modal-panel">
                 <h1>비밀번호 재설정</h1>
                 <form id="modalFindPasswordForm" method="post" action="/user/searchPasswordProc" novalidate>
@@ -158,6 +169,33 @@
                     <button class="modal-login-submit" type="submit">비밀번호 찾기</button>
                     <div class="modal-back-row"><a href="#loginModal" data-modal-panel="loginPanel">로그인으로 돌아가기</a></div>
                 </form>
+            </div>
+            <!--
+              비밀번호 찾기 2단계. 예전에는 1단계 제출이 /user/newPassword 한 장으로 넘어가고
+              거기서 또 /user/newPasswordResult 로 넘어갔다. 둘 다 이 창 안으로 들여왔다.
+            -->
+            <div id="newPasswordPanel" class="modal-panel">
+                <h1>새 비밀번호 설정</h1>
+                <form id="modalNewPasswordForm" novalidate>
+                    <div class="modal-login-field">
+                        <label class="visually-hidden" for="modalNewPassword">새 비밀번호</label>
+                        <input id="modalNewPassword" type="password" name="password" placeholder="새 비밀번호 입력" autocomplete="new-password">
+                    </div>
+                    <!-- 확인 칸에는 name 이 없다. 서버로 보낼 값이 아니라 오타를 잡는 자리다. -->
+                    <div class="modal-login-field">
+                        <label class="visually-hidden" for="modalNewPassword2">새 비밀번호 확인</label>
+                        <input id="modalNewPassword2" type="password" placeholder="새 비밀번호 확인" autocomplete="new-password">
+                    </div>
+                    <button class="modal-login-submit" type="submit">비밀번호 변경</button>
+                    <div class="modal-back-row"><a href="#loginModal" data-modal-panel="loginPanel">로그인으로 돌아가기</a></div>
+                </form>
+            </div>
+            <div id="findPasswordResultPanel" class="modal-panel">
+                <h1>비밀번호 재설정 결과</h1>
+                <p id="findPasswordResultMessage" class="modal-result-message"></p>
+                <a class="modal-login-submit" href="#loginModal" data-modal-panel="loginPanel">로그인</a>
+                <!-- 실패했을 때만 보인다. 성공한 사람에게 '다시 찾기' 는 할 일이 없는 링크다. -->
+                <div class="modal-back-row" id="findPasswordRetryRow" hidden><a href="#loginModal" data-modal-panel="findPasswordPanel">다시 찾기</a></div>
             </div>
         </section>
         <section class="login-modal-brand" aria-label="WheelWay 로고">
@@ -264,24 +302,135 @@
         } catch (error) { alert('서버에 연결하지 못했습니다.'); }
     });
 
-    document.getElementById('modalFindIdForm').addEventListener('submit', event => {
+    /*
+      아이디 찾기. ★ 페이지를 넘어가지 않는다 — 결과도 이 창 안에서 보여준다.
+      그래서 화면용 /user/searchUserIdProc 가 아니라 JSON 을 주는 쪽을 부른다.
+
+      이름은 사용자가 등록한 값이라 innerHTML 로 붙이지 않는다. 텍스트 노드로 넣는다.
+    */
+    const modalFindIdForm = document.getElementById('modalFindIdForm');
+    const findIdResultMessage = document.getElementById('findIdResultMessage');
+
+    modalFindIdForm.addEventListener('submit', async event => {
+        event.preventDefault();
         const name = document.getElementById('modalFindIdName');
         const email = document.getElementById('modalFindIdEmail');
         if (name.value.trim() === '' || email.value.trim() === '') {
-            event.preventDefault();
             alert(name.value.trim() === '' ? '이름을 입력하세요.' : '이메일을 입력하세요.');
             (name.value.trim() === '' ? name : email).focus();
+            return;
+        }
+
+        try {
+            const response = await fetch('/user/searchUserIdAjax', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+                body: new URLSearchParams(new FormData(modalFindIdForm))
+            });
+            const data = await response.json();
+
+            findIdResultMessage.textContent = '';
+            findIdResultMessage.classList.toggle('is-fail', !data.found);
+
+            if (data.found) {
+                const id = document.createElement('strong');
+                id.textContent = data.username;
+                findIdResultMessage.append(data.name + ' 회원님의 아이디는',
+                    document.createElement('br'), id, '입니다.');
+
+                // 찾은 아이디를 로그인 칸에 미리 넣어둔다. [로그인] 을 누르면 비밀번호만 치면 된다.
+                modalUserId.value = data.username;
+            } else {
+                findIdResultMessage.textContent = '일치하는 회원정보가 없습니다.';
+            }
+
+            showModalPanel('findIdResultPanel');
+        } catch (error) {
+            // '없다' 와 '못 물어봤다' 는 다른 말이다. 결과 패널로 넘기지 않는다.
+            alert('서버에 연결하지 못했습니다.');
         }
     });
 
-    document.getElementById('modalFindPasswordForm').addEventListener('submit', event => {
+    /*
+      비밀번호 찾기. 아이디 찾기와 같이 ★ 페이지를 넘어가지 않는다.
+      2단계다 - 본인 확인이 되면 새 비밀번호 칸이 같은 창에서 열리고, 저장하면 결과가 뜬다.
+
+      바꿀 대상(아이디)은 서버 세션에 있다. 화면은 들고 있지 않는다.
+    */
+    const modalFindPasswordForm = document.getElementById('modalFindPasswordForm');
+    const modalNewPasswordForm = document.getElementById('modalNewPasswordForm');
+    const modalNewPassword = document.getElementById('modalNewPassword');
+    const modalNewPassword2 = document.getElementById('modalNewPassword2');
+    const findPasswordResultMessage = document.getElementById('findPasswordResultMessage');
+    const findPasswordRetryRow = document.getElementById('findPasswordRetryRow');
+
+    addModalPasswordToggle(modalNewPassword);
+    addModalPasswordToggle(modalNewPassword2);
+
+    function showPasswordResult(ok, message) {
+        findPasswordResultMessage.textContent = message;
+        findPasswordResultMessage.classList.toggle('is-fail', !ok);
+        findPasswordRetryRow.hidden = ok;
+        showModalPanel('findPasswordResultPanel');
+    }
+
+    /** 비밀번호를 화면에 남겨두지 않는다. 창을 닫아도 값이 남으면 다음 사람이 본다. */
+    function clearNewPassword() {
+        modalNewPassword.value = '';
+        modalNewPassword2.value = '';
+    }
+
+    modalFindPasswordForm.addEventListener('submit', async event => {
+        event.preventDefault();
         const fields = ['modalFindPasswordName', 'modalFindPasswordId', 'modalFindPasswordEmail']
             .map(id => document.getElementById(id));
         const emptyField = fields.find(field => field.value.trim() === '');
         if (emptyField) {
-            event.preventDefault();
             alert(emptyField === fields[0] ? '이름을 입력하세요.' : emptyField === fields[1] ? '아이디를 입력하세요.' : '이메일을 입력하세요.');
             emptyField.focus();
+            return;
+        }
+
+        try {
+            const response = await fetch('/user/searchPasswordAjax', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+                body: new URLSearchParams(new FormData(modalFindPasswordForm))
+            });
+            const data = await response.json();
+
+            if (data.found) {
+                clearNewPassword();
+                showModalPanel('newPasswordPanel');
+                modalNewPassword.focus();
+            } else {
+                showPasswordResult(false, '일치하는 회원정보가 없습니다.');
+            }
+        } catch (error) {
+            // '없다' 와 '못 물어봤다' 는 다른 말이다. 결과 패널로 넘기지 않는다.
+            alert('서버에 연결하지 못했습니다.');
+        }
+    });
+
+    modalNewPasswordForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (modalNewPassword.value === '') { alert('새 비밀번호를 입력하세요.'); modalNewPassword.focus(); return; }
+        if (modalNewPassword2.value === '') { alert('새 비밀번호 확인을 입력하세요.'); modalNewPassword2.focus(); return; }
+        if (modalNewPassword.value !== modalNewPassword2.value) { alert('입력한 비밀번호가 일치하지 않습니다.'); modalNewPassword.focus(); return; }
+
+        try {
+            const response = await fetch('/user/newPasswordAjax', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+                body: new URLSearchParams({password: modalNewPassword.value})
+            });
+            const data = await response.json();
+            // MsgDTO 는 @JsonInclude(NON_DEFAULT) 라 result 가 0 이면 필드 자체가 안 온다.
+            showPasswordResult(data.result === 1, data.msg);
+        } catch (error) {
+            alert('서버에 연결하지 못했습니다.');
+        } finally {
+            clearNewPassword();
         }
     });
 </script>

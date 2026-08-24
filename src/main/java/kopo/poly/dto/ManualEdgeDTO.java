@@ -33,6 +33,18 @@ public class ManualEdgeDTO {
      */
     public static final String ADD_EXACT = "추가-고정";
 
+    /**
+     * 엣지 없이 <b>노드 하나만</b> 놓는다. {@code fromLat/fromLng} 만 쓰고 {@code to} 는 같은 값이다.
+     *
+     * <p>찍은 자리 그대로 만든다({@link #ADD_EXACT} 와 같은 규칙). 아무 선에도 안 붙은
+     * <b>외톨이 노드</b>라서 <b>길찾기는 이걸 쓰지 못한다</b> — 들어가고 나올 엣지가 없다.
+     * 이어 붙이기 전까지는 아무 일도 하지 않는 표식이다.
+     *
+     * <p>쓰임새: 없는 보도를 그릴 때 <b>꺾이는 자리를 먼저 다 찍어두고</b> 그다음
+     * {@link #ADD}(스냅 6m)로 이어 붙인다. 두 점을 한 번에 찍어야 하는 제약이 없어진다.
+     */
+    public static final String NODE = "노드";
+
     private long id;
     private String regionId;
 
