@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회원 정보 수정</title>
+    <style>
+        /* --- 기본 스타일 --- */
+        :root {
+            --bg-color: #F7F2EA;
+            --sidebar-width: 280px;
+            --sidebar-collapsed-width: 80px;
+            --primary-color: #8E7B5A;
+            --text-color: #333;
+            --text-light: #777;
+            --border-color: #E0DEDC;
+            --card-bg: #FFFFFF;
+            --button-bg: #5A664C;
+            --shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: var(--bg-color); color: var(--text-color); display: flex; min-height: 100vh; overflow-x: hidden; }
+        a { text-decoration: none; color: inherit; }
+        ul { list-style: none; }
+        button { border: none; background: none; cursor: pointer; font-family: inherit; }
+        input, textarea { border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; font-family: inherit; width: 100%; font-size: 14px; }
+        input:focus, textarea:focus { outline: none; border-color: var(--primary-color); }
+
+        /* --- 헤더 --- */
+        header { position: fixed; top: 0; left: var(--sidebar-width); right: 0; height: 70px; background-color: var(--bg-color); display: flex; justify-content: flex-end; align-items: center; padding: 0 30px; z-index: 100; transition: left 0.3s; }
+        body.sidebar-collapsed header { left: var(--sidebar-collapsed-width); }
+        .header-icons { display: flex; align-items: center; gap: 20px; color: var(--text-light); }
+        .user-profile { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .user-avatar { width: 35px; height: 35px; border-radius: 50%; background-color: #D9D9D9; }
+        .icon-btn { font-size: 20px; position: relative; }
+        .icon-btn span { position: absolute; top: -5px; right: -5px; background: #E64A19; color: white; font-size: 10px; width: 16px; height: 16px; border-radius: 50%; display: flex; justify-content: center; align-items: center; }
+
+        /* --- 사이드바 --- */
+        nav { width: var(--sidebar-width); background-color: white; display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 200; transition: width 0.3s; box-shadow: var(--shadow); overflow: hidden; }
+        body.sidebar-collapsed nav { width: var(--sidebar-collapsed-width); }
+        .logo-area { height: 70px; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--border-color); }
+        .logo-btn { font-weight: bold; font-size: 18px; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .menu-list { padding: 20px 10px; flex-grow: 1; display: flex; flex-direction: column; gap: 5px; }
+        .menu-item { display: flex; align-items: center; gap: 15px; padding: 12px 15px; border-radius: 8px; color: var(--text-light); font-weight: 500; transition: 0.2s; white-space: nowrap; }
+        .menu-item:hover, .menu-item.active { background-color: #FFF9F0; color: var(--primary-color); }
+        .menu-item.active { background-color: #FCEFD9; font-weight: 600; }
+        .icon { font-size: 20px; min-width: 24px; text-align: center; }
+        .menu-text { opacity: 1; transition: opacity 0.3s; }
+        body.sidebar-collapsed .menu-text { opacity: 0; }
+        .footer-icons { padding: 20px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 15px; color: var(--text-light); align-items: center; }
+
+        /* --- 메인 콘텐츠 --- */
+        main { margin-left: var(--sidebar-width); padding: 100px 40px 40px 40px; flex-grow: 1; transition: margin-left 0.3s; }
+        body.sidebar-collapsed main { margin-left: var(--sidebar-collapsed-width); }
+        .content-section { background-color: var(--card-bg); border-radius: 12px; padding: 40px; margin-bottom: 30px; box-shadow: var(--shadow); }
+        .section-title { font-size: 20px; font-weight: 700; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; }
+        .info-group { margin-bottom: 30px; border-bottom: 1px solid var(--border-color); padding-bottom: 30px; }
+        .info-group:last-child { border-bottom: none; padding-bottom: 0; }
+        .group-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; color: var(--primary-color); }
+        .info-row { display: flex; align-items: center; margin-bottom: 15px; }
+        .info-label { width: 140px; font-weight: 500; color: var(--text-light); flex-shrink: 0; }
+        .info-value { flex-grow: 1; color: var(--text-color); }
+        .large-avatar { width: 100px; height: 100px; border-radius: 50%; background-color: #E0DEDC; border: 2px solid var(--primary-color); margin: 0 auto 30px; display: block; }
+
+        /* 주소록 */
+        .address-item { display: flex; align-items: center; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid var(--border-color); }
+        .address-item:last-child { border-bottom: none; }
+        .address-detail { display: flex; align-items: center; gap: 15px; }
+        .address-type { font-weight: 600; width: 100px; display: flex; align-items: center; gap: 8px; }
+        .address-text { color: var(--text-light); }
+        .btn-sm { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 15px; font-size: 14px; font-weight: 500; transition: 0.2s; background: white; cursor: pointer; }
+        .btn-sm:hover { background-color: #F5F5F5; }
+
+        /* 버튼 */
+        .btn-primary { background-color: var(--button-bg); color: white; font-weight: 600; border-radius: 6px; padding: 12px 30px; cursor: pointer; }
+        .btn-secondary { background-color: #EAE6DF; color: var(--text-color); font-weight: 600; border-radius: 6px; padding: 12px 30px; cursor: pointer; }
+        .btn-search { background-color: #E0DEDC; color: var(--text-color); font-weight: 500; border-radius: 6px; padding: 10px 20px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+
+        /* --- 모달 --- */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: none; justify-content: center; align-items: center; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--card-bg); border-radius: 12px; width: 500px; max-width: 90%; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); position: relative; animation: modalIn 0.3s ease-out; }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-header { font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .close-modal { font-size: 24px; color: var(--text-light); cursor: pointer; }
+        .modal-body { display: flex; flex-direction: column; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-label { font-weight: 600; color: var(--primary-color); }
+        .input-with-btn { display: flex; gap: 10px; align-items: center; }
+        .address-icon-large { width: 70px; height: 70px; border-radius: 50%; background-color: #F7F2EA; border: 2px solid var(--primary-color); margin: 0 auto 15px; display: flex; justify-content: center; align-items: center; font-size: 26px; color: var(--primary-color); }
+        .modal-title-text { text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 20px; }
+        .modal-footer { margin-top: 25px; display: flex; justify-content: center; gap: 15px; }
+        .relative { position: relative; }
+        .clear-btn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: #888; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    </style>
+</head>
+<body class="sidebar-collapsed">
+
+<!-- 헤더 -->
+<header>
+    <div class="header-icons">
+        <div class="user-profile">
+            <div class="user-avatar"></div>
+            ycy ▾
+        </div>
+        <div class="icon-btn">💬</div>
+        <div class="icon-btn">🔔 <span>90+</span></div>
+        <div class="icon-btn">✉️</div>
+        <div class="icon-btn">🔲</div>
+    </div>
+</header>
+
+<!-- 사이드바 -->
+<nav>
+    <div class="logo-area">
+        <button class="logo-btn" onclick="toggleSidebar()">MY</button>
+    </div>
+    <ul class="menu-list">
+        <li>
+            <a href="#basic-info" class="menu-item active" onclick="setActiveMenu(this)">
+                <span class="icon">👤</span>
+                <span class="menu-text">기본 정보</span>
+            </a>
+        </li>
+        <li>
+            <a href="#contact-info" class="menu-item" onclick="setActiveMenu(this)">
+                <span class="icon">📱</span>
+                <span class="menu-text">연락처 정보</span>
+            </a>
+        </li>
+        <li>
+            <a href="#address-manage" class="menu-item" onclick="setActiveMenu(this)">
+                <span class="icon">🏠</span>
+                <span class="menu-text">주소록 관리</span>
+            </a>
+        </li>
+    </ul>
+    <div class="footer-icons">
+        <div class="icon-btn">🔍</div>
+        <div class="icon-btn">👤</div>
+    </div>
+</nav>
+
+<!-- 메인 콘텐츠 -->
+<main>
+    <div class="content-section">
+        <h1 class="section-title">회원 기본정보 수정</h1>
+
+        <!-- 기본 정보 -->
+        <div id="basic-info" class="info-group">
+            <h2 class="group-title">👤 기본 정보</h2>
+            <div class="large-avatar"></div>
+            <div class="info-row">
+                <div class="info-label">이름</div>
+                <div class="info-value relative">
+                    <input type="text" value="홍길동">
+                    <span class="clear-btn">✕</span>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">아이디 (이메일)</div>
+                <div class="info-value relative">
+                    <input type="email" value="honggildong@example.com">
+                    <span class="clear-btn">✕</span>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">비밀번호 변경</div>
+                <div class="info-value">
+                    <button class="btn-secondary" style="width: 100%;">비밀번호 변경</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 연락처 정보 -->
+        <div id="contact-info" class="info-group">
+            <h2 class="group-title">📱 연락처 정보</h2>
+            <div class="info-row">
+                <div class="info-label">휴대폰 번호</div>
+                <div class="info-value relative">
+                    <input type="tel" value="010-1234-5678">
+                    <span class="clear-btn">✕</span>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label"></div>
+                <div class="info-value">
+                    <button class="btn-secondary" style="width: 100%;">번호 인증</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 주소록 관리 -->
+    <div id="address-manage" class="content-section">
+        <h1 class="section-title">주소록 관리 ℹ️</h1>
+        <div class="address-item">
+            <div class="address-detail">
+                <span class="address-type">🏠 집 주소</span>
+                <span class="address-text">[ &nbsp; &nbsp; ]</span>
+            </div>
+            <button class="btn-sm" onclick="openModal('home')">수정</button>
+        </div>
+        <div class="address-item">
+            <div class="address-detail">
+                <span class="address-type">🏢 회사 주소</span>
+                <span class="address-text">[ &nbsp; &nbsp; ]</span>
+            </div>
+            <button class="btn-sm" onclick="openModal('company')">수정</button>
+        </div>
+        <div class="address-item">
+            <div class="address-detail">
+                <span class="address-type">📦 배송지 목록</span>
+                <span class="address-text"></span>
+            </div>
+            <button class="btn-sm" onclick="openModal('delivery')">관리</button>
+        </div>
+    </div>
+</main>
+
+<!-- 주소 수정 모달 -->
+<div id="addressModal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span id="modalTitleTop">집 주소 수정</span>
+            <span class="close-modal" onclick="closeModal()">&times;</span>
+        </div>
+        <div class="address-icon-large" id="modalIcon">🏠</div>
+        <div class="modal-title-text" id="modalTitleText">집 주소 수정</div>
+
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label" id="modalLabelText">새로운 집 주소</label>
+                <div class="input-with-btn">
+                    <input type="text" placeholder="도로명 또는 지번 주소를 입력하세요">
+                    <button class="btn-search">주소 검색</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <input type="text" placeholder="기본 주소">
+            </div>
+            <div class="form-group relative">
+                <input type="text" placeholder="상세 주소">
+                <span class="clear-btn">✕</span>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal()">취소</button>
+            <button class="btn-primary" onclick="closeModal()">저장</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 사이드바 토글 함수
+    function toggleSidebar() {
+        document.body.classList.toggle('sidebar-collapsed');
+    }
+
+    // 메뉴 활성화 상태 변경
+    function setActiveMenu(element) {
+        document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+        element.classList.add('active');
+    }
+
+    // 모달 열기 함수 (집/회사/배송지 맞춤 설정)
+    function openModal(type) {
+        const modal = document.getElementById('addressModal');
+        const titleTop = document.getElementById('modalTitleTop');
+        const titleText = document.getElementById('modalTitleText');
+        const labelText = document.getElementById('modalLabelText');
+        const modalIcon = document.getElementById('modalIcon');
+
+        if (type === 'home') {
+            titleTop.innerText = '집 주소 수정';
+            titleText.innerText = '집 주소 수정';
+            labelText.innerText = '새로운 집 주소';
+            modalIcon.innerText = '🏠';
+        } else if (type === 'company') {
+            titleTop.innerText = '회사 주소 수정';
+            titleText.innerText = '회사 주소 수정';
+            labelText.innerText = '새로운 회사 주소';
+            modalIcon.innerText = '🏢';
+        } else if (type === 'delivery') {
+            titleTop.innerText = '배송지 목록 관리';
+            titleText.innerText = '배송지 관리';
+            labelText.innerText = '배송지 주소';
+            modalIcon.innerText = '📦';
+        }
+
+        modal.classList.add('active');
+    }
+
+    // 모달 닫기 함수
+    function closeModal() {
+        const modal = document.getElementById('addressModal');
+        modal.classList.remove('active');
+    }
+
+    // 모달 배경 클릭시 닫기
+    window.onclick = function(event) {
+        const modal = document.getElementById('addressModal');
+        if (event.target === modal) {
+            closeModal();
+        }
+    }
+</script>
+</body>
+</html>
