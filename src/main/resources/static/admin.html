@@ -17,6 +17,59 @@
             pointer-events: none;
         }
 
+        /*
+          내 이동 기록. #geo(오른쪽 아래 구석) 위로 띄운다.
+          ★ #geo 는 두 줄이라 41px 이고 bottom:8 에 있다 — 그 위로 확실히 비켜야 한다.
+            40px 으로 뒀다가 9px 겹쳤다(2026-08-24).
+        */
+        #walkrec {
+            position: absolute; right: 12px; bottom: 60px; z-index: 10;
+            width: 360px; max-height: 40vh; display: flex; flex-direction: column;
+            background: rgba(255, 255, 255, .97);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 12px; line-height: 1.5;
+        }
+        .wr-head {
+            display: flex; align-items: center; gap: 6px;
+            padding: 8px 10px; border-bottom: 1px solid #e3e3e3;
+        }
+        .wr-head b { font-size: 13px; }
+        #wr-who { color: #666; flex: 1; }
+        .wr-head button {
+            width: 22px; height: 22px; padding: 0; cursor: pointer; line-height: 1;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 4px;
+        }
+        #wr-body { overflow-y: auto; padding: 8px 10px 10px; }
+        #walkrec.is-folded #wr-body { display: none; }
+
+        .wr-speed {
+            padding: 6px 8px; margin-bottom: 8px; border-radius: 5px;
+            background: #eef4fb; color: #10406f;
+        }
+        .wr-speed b { font-size: 13px; }
+
+        .wr-row {
+            display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
+            padding: 6px 4px; border-bottom: 1px solid #f0f0f0;
+        }
+        .wr-row:last-child { border-bottom: 0; }
+        .wr-row .wr-where { font-weight: 600; }
+        .wr-row .wr-sub { color: #666; grid-column: 1 / -1; }
+        /* 속도가 말이 안 되는 기록은 눈에 띄어야 한다 — 이 화면을 만든 이유가 그것이다. */
+        .wr-row.is-odd { background: #fff4f4; }
+        .wr-row.is-odd .wr-mpm { color: #c62828; font-weight: 700; }
+        .wr-row.is-excluded { opacity: .55; }
+        .wr-tag {
+            display: inline-block; margin-left: 4px; padding: 0 5px;
+            border-radius: 3px; font-size: 11px; background: #eee; color: #555;
+        }
+        .wr-actions { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 4px; }
+        .wr-actions button {
+            padding: 3px 8px; cursor: pointer; font-size: 11px;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 4px;
+        }
+        .wr-actions button.danger { color: #c62828; border-color: #e0b4b4; }
+
         #panel {
             position: absolute; top: 12px; left: 12px; z-index: 10;
             width: 300px; padding: 14px 16px;
@@ -35,6 +88,20 @@
         .wait { background: #f2f2f2; color: #555; }
 
         .legend i { display: inline-block; width: 22px; height: 4px; vertical-align: middle; margin-right: 6px; }
+
+        /*
+         * 엣지 종류 고르기. #panel label 이 display:block 이라 그대로 두면 세 줄로 벌어진다.
+         * ID 선택자를 이기려면 여기도 #panel 을 붙여야 한다.
+         * ★ [hidden] 이 display:flex 를 못 이긴다 - .io / .side / .chat 에서 이미 밟은 함정이다.
+         */
+        /* 네 칸이 300px 패널에 한 줄로 들어가야 한다. 여백을 넓히면 '차도'가 다음 줄로 접힌다. */
+        .ekind { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; margin-top: 4px; }
+        .ekind[hidden] { display: none; }
+        #panel .ekind label { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+        .ekind .cap { color: #555; font-size: 12px; }
+        .ekind i { display: inline-block; width: 12px; height: 4px; }
+        /* 삭제·끄기에서는 종류가 의미 없다. 숨기지 않고 흐리게 둬야 기능이 있다는 것이 보인다. */
+        .ekind.off { opacity: .4; }
         .row { display: flex; justify-content: space-between; }
         .row span:last-child { font-weight: bold; }
         hr { border: 0; border-top: 1px solid #e3e3e3; margin: 10px 0; }
@@ -182,13 +249,48 @@
     <label class="legend"><input type="radio" name="emode" value="추가"> <b>추가</b> — 두 점을 클릭</label>
     <label class="legend"><input type="radio" name="emode" value="추가-고정">
         <b>추가(고정)</b> — 찍은 자리 그대로</label>
+    <label class="legend"><input type="radio" name="emode" value="노드">
+        <b>노드</b> — 한 점만 클릭 (선은 안 생김)</label>
     <label class="legend"><input type="radio" name="emode" value="삭제"> <b>삭제</b> — 엣지 근처를 클릭</label>
-    <div class="sub" id="e-hint" style="margin-top:4px">끄기 상태입니다.</div>
-    <div class="btns" style="display:flex; gap:6px; margin-top:6px">
-        <button class="primary" id="e-apply" disabled>저장</button>
-        <button id="e-clear">취소</button>
+
+    <!--
+      추가할 엣지의 종류. 값은 wheelway.highway-weights 의 키여야 한다 -
+      표에 없는 키를 보내면 highway-weight-default(2.0) 로 떨어져 의도한 가중치가 안 먹는다.
+      삭제는 종류를 안 쓴다(EDGE_KIND 가 NULL 로 들어간다).
+    -->
+    <div class="ekind off" id="e-kind">
+        <span class="cap">종류</span>
+        <label><input type="radio" name="ekind" value="crossing" checked disabled>
+            <i style="background:#26a69a"></i>횡단보도</label>
+        <label><input type="radio" name="ekind" value="footway" disabled>
+            <i style="background:#26a69a"></i>도보</label>
+        <label><input type="radio" name="ekind" value="residential" disabled>
+            <i style="background:#e8833a"></i>차도</label>
     </div>
-    <div id="e-list" style="max-height:150px; overflow-y:auto; margin-top:6px; font-size:12px"></div>
+    <div class="hint" style="margin:2px 0 0; color:#888; font-size:11px">
+        가중치 도보·횡단보도 1.0 / 차도 2.2. 차도는 보도가 없는 골목 기준이라 길찾기가 그만큼 피해 간다.</div>
+
+    <div class="sub" id="e-hint" style="margin-top:4px">끄기 상태입니다.</div>
+    <div class="sub" id="e-queue" style="margin-top:6px; font-size:12px; color:#555">
+        대기 중인 것 없음</div>
+    <div class="btns" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap">
+        <button class="primary" id="e-apply" disabled>저장</button>
+        <button id="e-break" disabled>끊기</button>
+        <button id="e-undo" disabled>마지막 취소</button>
+        <button id="e-clear">전부 취소</button>
+    </div>
+    <!--
+      목록 머리줄. 여러 개를 골라 한 번에 지운다 — 한 건씩 지우면 건마다 그래프를
+      다시 만드느라(3.4초) 여덟 개에 30초가 걸린다.
+    -->
+    <div id="e-list-head" style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:12px" hidden>
+        <label style="display:inline-flex; align-items:center; gap:3px; cursor:pointer">
+            <input type="checkbox" id="e-all"> 전체</label>
+        <span id="e-sel-count" style="color:#888"></span>
+        <button id="e-del-sel" style="margin-left:auto; font-size:11px; padding:1px 6px; cursor:pointer" disabled>
+            선택 삭제</button>
+    </div>
+    <div id="e-list" style="max-height:150px; overflow-y:auto; margin-top:4px; font-size:12px"></div>
 
     <div class="hint" style="margin-top:8px">
         주황 점 근처를 클릭하거나 오른쪽 목록에서 고르세요.<br>
@@ -208,8 +310,15 @@
         <i style="background:#d32f2f"></i><i style="background:#f9a825"></i><i style="background:#2e7d32"></i>
         제보 <span id="c-report"></span></label>
     <div class="hint" style="margin-left:22px; color:#888; font-size:11px">
-        빨강=통행 불가(높음) · 노랑=고려(보통) · 초록=통행 가능(낮음).<br>
-        흐린 것은 반려·해소돼 차단에서 빠진 제보다.</div>
+        빨강=통행 불가(높음) · 노랑=고려(보통) · 초록=통행 가능(낮음).</div>
+    <!--
+      해소·반려된 제보는 기본으로 <b>지도에서 감춘다.</b>
+      예전에는 점만 흐리게(opacity .3) 두고 선은 원래 색 그대로 그렸다. 아무것도 안 막는
+      제보가 차단 중인 것과 똑같은 빨간 선으로 남아서, 지우고 나서도 자국이 남은 것처럼 보였다.
+      기록이 사라지는 건 아니다 - 아래 목록에는 흐리게 그대로 있고, 여기를 켜면 지도에도 나온다.
+    -->
+    <label class="legend" style="margin-left:22px"><input type="checkbox" id="t-report-done">
+        <span style="color:#888; font-size:11px">해소·반려된 것도 지도에 보기</span></label>
 
     <!--
       로그인 상태를 먼저 보여준다. OBSTACLE_REPORTS.USERNAME 이 USERS 로 FK NOT NULL 이라
@@ -296,6 +405,7 @@
             <option>턱</option>
             <option>계단</option>
             <option>적치물</option>
+            <option>공사</option>
             <option>기타</option>
         </select>
 
@@ -348,6 +458,33 @@
 <div id="map"></div>
 <!-- 지도 위에 겹쳐 둔다. 스크린샷을 찍으면 좌표가 같이 찍혀서, 그림만 보고도 환산이 된다. -->
 <div id="geo"></div>
+
+<!--
+  지금 로그인한 사람이 잰 이동 기록 전부.
+
+  ★ 왜 이 화면에 두는가: 안내에 쓰는 도보 속도(m/분)는 <b>정류장을 안 가리고 기록 전부</b>
+  에서 나오는데, 사용자 화면은 정류장 하나에 묶인 목록만 보여준다. 그래서
+  '도보가 왜 26분이지'를 확인하려 해도 그 값을 만든 기록이 어디에도 안 보였다.
+  실제로 그렇게 됐다(2026-08-24: 보은에서 잰 187m 기록 두 건이 청주 안내를 4배로 늘렸다).
+
+  ★ 남의 기록은 안 나온다. 기준은 '지금 로그인한 세션'이다 —
+  관리자 화면이라는 것과 남의 개인 기록을 봐도 된다는 것은 다른 말이다.
+
+  자리: 오른쪽 위는 #editor 가, 왼쪽은 #panel 과 축척바가 쓴다.
+  오른쪽 아래 구석은 #geo(좌표 표시)라 그 위로 띄운다.
+-->
+<div id="walkrec">
+    <div class="wr-head">
+        <b>내 이동 기록</b>
+        <span id="wr-who"></span>
+        <button id="wr-reload" title="다시 불러오기">↻</button>
+        <button id="wr-fold" title="접기/펴기">−</button>
+    </div>
+    <div id="wr-body">
+        <div id="wr-speed" class="wr-speed">불러오는 중…</div>
+        <div id="wr-list"></div>
+    </div>
+</div>
 
 <script>
     // wheelway.region-id 와 맞춰야 한다. chungbuk-boeun → [36.4894, 127.7295] (보은읍 중심가)
@@ -450,6 +587,9 @@
         s.onerror = () => setStatus('지도 SDK 를 불러오지 못했습니다. 키와 플랫폼 도메인 설정을 확인하세요.', 'fail');
         s.onload = () => kakao.maps.load(initMap);
         document.head.appendChild(s);
+
+        // 지도와 무관한 패널이라 SDK 를 기다리지 않는다. 키가 없어 지도가 안 떠도 이건 보여야 한다.
+        loadWalkRecords();
     }
 
     async function initMap() {
@@ -785,7 +925,7 @@
             const live = LIVE_STATUS.includes(r.status);
 
             (r.segments || []).forEach(s => {
-                reportLines.push({ id: r.id, line: makeLine(s, sevColor(r.severity), 6) });
+                reportLines.push({ id: r.id, live, line: makeLine(s, sevColor(r.severity), 6) });
             });
 
             const el = document.createElement('div');
@@ -799,7 +939,7 @@
                 position: new kakao.maps.LatLng(r.latitude, r.longitude),
                 content: el, zIndex: 4, map: map
             });
-            reportOverlays.push({ id: r.id, dot, el });
+            reportOverlays.push({ id: r.id, live, dot, el });
         });
 
         const high = reportData.filter(r => r.severity === '높음' && LIVE_STATUS.includes(r.status)).length;
@@ -843,16 +983,26 @@
         }
     }
 
-    /** 수정 중인 제보의 점은 흐리게, 그 선은 숨긴다. 공사에서와 같은 이유다(미리보기와 두 겹이 된다). */
+    /**
+     * 수정 중인 제보의 점은 흐리게, 그 선은 숨긴다. 공사에서와 같은 이유다(미리보기와 두 겹이 된다).
+     *
+     * <p>★ <b>해소·반려된 제보는 점도 선도 감춘다</b>(t-report-done 으로 켤 수 있다).
+     * 아무것도 안 막는 제보인데 선이 차단 중인 것과 같은 색으로 남아 있어서,
+     * 해소하고 나서도 자국이 남은 것처럼 보였다.
+     */
     function applyReportOverlays() {
         const on = $('t-report').checked;
+        const done = $('t-report-done').checked;
         const id = rpEditing ? rpEditing.id : null;
 
+        // 수정 중인 것은 상태와 무관하게 보여준다 - 지금 손대고 있는 것이 사라지면 안 된다.
+        const show = (o) => on && (o.live || done || o.id === id);
+
         reportOverlays.forEach(o => {
-            o.dot.setMap(on ? map : null);
+            o.dot.setMap(show(o) ? map : null);
             o.el.classList.toggle('was', o.id === id);
         });
-        reportLines.forEach(o => o.line.setMap(on && o.id !== id ? map : null));
+        reportLines.forEach(o => o.line.setMap(show(o) && o.id !== id ? map : null));
     }
 
     function nearestReport(lat, lng, maxM) {
@@ -1271,12 +1421,21 @@
         if (map.getLevel() > 6) { $('c-graph').textContent = '(확대 필요)'; return; }
 
         const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
-        // 사람이 직접 넣은 엣지·노드는 '엣지 직접 수정' 에 들어갔을 때만 받는다.
-        // 평소에도 보이면 원본 데이터와 섞여, 지도에 원래 있는 길처럼 읽힌다.
+        /*
+          사람이 직접 넣은 엣지·노드도 <b>항상</b> 받는다.
+
+          예전에는 '엣지 직접 수정' 모드에 들어갔을 때만 받았다. 원본 데이터와 섞여
+          '지도에 원래 있는 길' 처럼 읽히는 것을 막으려던 것인데, 이 화면에서는 반대로
+          손해였다 — 방금 그린 것이 모드를 끄면 사라지니 <b>저장이 안 된 것처럼 보인다.</b>
+          여기는 관리자 화면이고, 무엇이 손으로 넣은 것인지 아는 사람이 보는 자리다.
+
+          사용자 화면(map.js)은 이 파라미터를 안 보내므로 예전 그대로 감춰진다 —
+          거기서는 원본과 섞이면 안 된다는 이유가 여전히 맞다.
+        */
         const g = await fetch('/api/overlay/graph'
             + `?minLat=${sw.getLat()}&minLng=${sw.getLng()}`
             + `&maxLat=${ne.getLat()}&maxLng=${ne.getLng()}`
-            + (eMode() ? '&manual=true' : '')).then(r => r.json());
+            + '&manual=true').then(r => r.json());
         graphCache = g;
 
         // 보도는 초록, 차도는 주황. 횡단보도를 어디 찍을지 판단하려면 이 구분이 있어야 한다.
@@ -1299,8 +1458,21 @@
 
     // ------------------------------------------------------------ 엣지 직접 수정
 
+    /*
+      ★ 저장을 누르기 전까지 쌓아두는 것들.
+
+      한 건씩 저장하면 건마다 서버가 그래프를 통째로 다시 만든다(3.4초). 열 구간을 그리면
+      34초를 기다리게 된다. 모아서 한 번에 보내면 그 3.4초가 <b>한 번</b>으로 끝난다.
+
+      각 항목은 서버의 MANUAL_EDGES 한 행과 같은 모양이다.
+        { action, fromLat, fromLng, toLat, fromLng, edgeKind }
+    */
+    let ePending = [];
+
+    /** 지금 켜져 있는 모드. 쌓아둔 것을 버릴지 물었다가 '취소' 하면 여기로 되돌린다. */
+    let ePrevMode = '';
+
     let ePick = [];        // 추가 모드에서 찍은 점들
-    let eTarget = null;    // 삭제 모드에서 고른 엣지 [[위도,경도],[위도,경도]]
     let eOverlays = [];
 
     function eMode() {
@@ -1308,11 +1480,41 @@
         return r ? r.value : '';
     }
 
+    /**
+     * 추가할 수 있는 엣지 종류. 키는 wheelway.highway-weights 에 있는 것만 쓴다.
+     *
+     * 차도를 residential(2.2) 로 잡은 이유: 손으로 그려 넣을 차도는 대부분 보도가 없는
+     * 골목이다. 대로(primary 1.3)는 OSM 에 이미 들어 있어 사람이 그릴 일이 거의 없다.
+     * 색은 그래프 범례(초록=보도 / 주황=차도)와 맞춘다.
+     */
+    const E_KINDS = {
+        crossing:    { label: '횡단보도', color: '#26a69a' },
+        footway:     { label: '도보',     color: '#26a69a' },
+        residential: { label: '차도',     color: '#e8833a' }
+    };
+
+    function eKind() {
+        const r = document.querySelector('input[name="ekind"]:checked');
+        return r ? r.value : 'crossing';
+    }
+
     /** 엣지 수정 모드일 때의 지도 클릭. 공사 점 이동보다 먼저 처리된다. */
     function onEdgeClick(latLng) {
         const lat = latLng.getLat(), lng = latLng.getLng();
 
-        if (eMode() === '추가-고정') {
+        if (eMode() === '노드') {
+            // 클릭할 때마다 대기열에 하나씩 쌓는다. 계속 찍어 나가다 마지막에 한 번 저장한다.
+            const near = nearestGraphNode(lat, lng, 2);
+            const at = near || [lat, lng];
+            ePending.push({ action: '노드', fromLat: at[0], fromLng: at[1], toLat: at[0], toLng: at[1] });
+            renderQueue();
+            setStatus(near
+                ? `2m 안에 이미 노드가 있어 새로 안 생길 수 있습니다. 대기 ${ePending.length}건.`
+                : `노드를 찍었습니다. 대기 ${ePending.length}건 — 계속 찍고 마지막에 [저장].`, 'wait');
+            drawEdgePick();
+            return;
+
+        } else if (eMode() === '추가-고정') {
             // 스냅하지 않는다. 아직 그려지지 않은 보도를 사람이 직접 놓는 모드다.
             // 2m 안에 이미 노드가 있으면 서버가 그것을 다시 쓴다(연달아 이을 때 끊기지 않게).
             const near = nearestGraphNode(lat, lng, 2);
@@ -1320,24 +1522,119 @@
             ePick.push(at);
             if (ePick.length > 2) ePick = [at];
             const how = near ? '2m 안 기존 노드를 다시 씁니다' : '새 노드를 만듭니다';
-            setStatus(ePick.length === 1
-                ? `한쪽 끝을 찍었습니다(${how}). 반대쪽 끝을 클릭하세요.`
-                : `두 점을 찍었습니다(${how}). [저장] 을 누르면 이어집니다.`, 'wait');
+            if (ePick.length === 2) { queueSegment(); return; }
+            setStatus(`한쪽 끝을 찍었습니다(${how}). 반대쪽 끝을 클릭하세요.`, 'wait');
         } else if (eMode() === '추가') {
             const p = pickPoint(lat, lng);
             if (!p) { setStatus('가까운 노드도 엣지도 없습니다. 확대해서 선 위나 근처를 클릭하세요.', 'fail'); return; }
             ePick.push(p.at);
             if (ePick.length > 2) ePick = [p.at];
             const how = p.onEdge ? '선 위(노드를 새로 만듭니다)' : '기존 노드';
-            setStatus(ePick.length === 1
-                ? `한쪽 끝을 ${how}에 찍었습니다. 반대쪽 끝을 클릭하세요.`
-                : `두 점을 찍었습니다(${how}). [저장] 을 누르면 이어집니다.`, 'wait');
+            if (ePick.length === 2) { queueSegment(); return; }
+            setStatus(`한쪽 끝을 ${how}에 찍었습니다. 반대쪽 끝을 클릭하세요.`, 'wait');
         } else {
             const e = nearestGraphEdge(lat, lng);
             if (!e) { setStatus('가까운 엣지가 없습니다.', 'fail'); return; }
-            eTarget = e;
-            setStatus('지울 엣지를 골랐습니다. [저장] 을 누르면 그래프에서 빠집니다.', 'wait');
+
+            /*
+              여러 개를 골라 한 번에 지운다. 추가와 같은 이유다 — 한 건씩 저장하면
+              건마다 그래프를 다시 만드느라 3.4초가 든다.
+
+              이미 고른 것을 또 누르면 <b>선택이 풀린다.</b> 촘촘한 구역에서는 옆 엣지를
+              잘못 집기 쉬운데, 되돌릴 길이 [마지막 취소] 뿐이면 중간에 잘못 집은 것을
+              뺄 수 없다.
+            */
+            const same = (m) => Math.abs(m.fromLat - e[0][0]) < 1e-9 && Math.abs(m.fromLng - e[0][1]) < 1e-9
+                             && Math.abs(m.toLat   - e[1][0]) < 1e-9 && Math.abs(m.toLng   - e[1][1]) < 1e-9;
+            const at = ePending.findIndex(same);
+            if (at >= 0) {
+                ePending.splice(at, 1);
+                renderQueue();
+                setStatus(`선택을 풀었습니다. 대기 ${ePending.length}건.`, 'wait');
+                return;
+            }
+
+            ePending.push({ action: '삭제',
+                fromLat: e[0][0], fromLng: e[0][1], toLat: e[1][0], toLng: e[1][1] });
+            renderQueue();
+            setStatus(`지울 엣지 ${ePending.length}건을 골랐습니다 — 계속 고르고 마지막에 [저장]. `
+                + `이미 고른 것을 다시 누르면 풀립니다.`, 'wait');
+            return;
         }
+        drawEdgePick();
+    }
+
+    /**
+     * 찍은 두 점을 대기열에 넣고 <b>이어그리기</b>를 계속한다.
+     *
+     * <p>끝점을 다음 구간의 시작점으로 남긴다 — 없는 보도는 대개 여러 마디로 이어지는데,
+     * 매번 같은 자리를 다시 찍게 하면 2m 안을 손으로 맞춰야 한다. [끊기] 로 이 사슬을 끊는다.
+     */
+    /**
+     * 두 점이 이보다 가까우면 <b>같은 노드에 붙는다</b>고 본다.
+     *
+     * <p>화면이 클릭을 이미 스냅해서 들고 있으므로(추가=6m 안 노드 / 추가-고정=2m 안 노드),
+     * 두 값이 사실상 같다는 것은 서버에서도 같은 노드가 된다는 뜻이다.
+     * 0.5m 면 '진짜로 겹친 것' 만 걸리고 짧지만 멀쩡한 구간은 통과한다.
+     */
+    const MIN_SEG_M = 0.5;
+
+    function queueSegment() {
+        const mode = eMode(), kind = eKind();
+
+        /*
+          ★ 길이 0 짜리는 쌓지 않는다.
+
+          두 점이 같은 노드에 붙으면 서버가 '양 끝이 같은 노드에 붙음' 으로 거절한다.
+          그걸 저장한 뒤에 알게 되면 몇 초 기다린 끝에 실패를 보게 되고,
+          이어그리던 사슬 한가운데에 죽은 기록이 하나 낀다 —
+          실측(2026-08-24): #370·#372·#378 이 그렇게 생겼다.
+
+          찍은 점은 그대로 남긴다. 사슬을 끊지 않아야 이어서 다음 점을 찍을 수 있다.
+        */
+        const gap = distanceM(ePick[0][0], ePick[0][1], ePick[1][0], ePick[1][1]);
+        if (gap < MIN_SEG_M) {
+            ePick = [ePick[0]];
+            drawEdgePick();
+            setStatus(`두 점이 같은 자리에 붙었습니다(${gap.toFixed(1)}m). `
+                + `더 벌려서 찍으세요 — 이 상태로 저장하면 그래프에 안 들어갑니다.`, 'fail');
+            return;
+        }
+
+        ePending.push({
+            action: mode,
+            fromLat: ePick[0][0], fromLng: ePick[0][1],
+            toLat: ePick[1][0], toLng: ePick[1][1],
+            edgeKind: kind
+        });
+        const last = ePick[1];
+        ePick = [last];                       // 끝점이 다음 구간의 시작점이 된다
+        renderQueue();
+        drawEdgePick();
+        setStatus(`${mode}(${(E_KINDS[kind] || {}).label || kind}) 대기 ${ePending.length}건. `
+            + `이어서 다음 점을 클릭하거나, [끊기] 로 사슬을 끊거나, [저장] 하세요.`, 'wait');
+    }
+
+    /** 대기열 줄과 버튼 상태. 저장 전까지는 서버에 아무것도 안 갔다는 것을 계속 보여준다. */
+    function renderQueue() {
+        const n = ePending.length;
+        const box = $('e-queue');
+        if (n === 0) {
+            box.textContent = '대기 중인 것 없음';
+            box.style.color = '#555';
+        } else {
+            const 종류별 = {};
+            ePending.forEach(m => {
+                const key = (m.action === '노드' || m.action === '삭제') ? m.action
+                    : `${m.action}(${(E_KINDS[m.edgeKind] || {}).label || m.edgeKind})`;
+                종류별[key] = (종류별[key] || 0) + 1;
+            });
+            box.textContent = `아직 저장 안 됨 — 대기 ${n}건 : `
+                + Object.entries(종류별).map(([k, v]) => `${k} ${v}`).join(' · ');
+            box.style.color = '#b45309';
+        }
+        $('e-undo').disabled = n === 0;
+        $('e-break').disabled = ePick.length === 0;
         drawEdgePick();
     }
 
@@ -1411,56 +1708,183 @@
         eOverlays.forEach(o => o.setMap(null));
         eOverlays = [];
 
+        // 아직 저장 안 된 것들. 저장된 그래프(초록/주황)와 구분되게 다른 색으로 그린다.
+        ePending.forEach(m => {
+            if (m.action === '삭제') {
+                // 지울 것은 분홍 굵은 선. 아직 안 지워졌다는 뜻으로 점선으로 둔다.
+                const l = makeLine([[m.fromLat, m.fromLng], [m.toLat, m.toLng]], '#d81b60', 7);
+                l.setOptions({ strokeStyle: 'shortdash' });
+                l.setMap(map);
+                eOverlays.push(l);
+            } else if (m.action === '노드') {
+                const el = document.createElement('div');
+                el.className = 'nend on';
+                el.textContent = '●';
+                el.style.opacity = '.75';
+                eOverlays.push(new kakao.maps.CustomOverlay({
+                    position: new kakao.maps.LatLng(m.fromLat, m.fromLng), content: el, zIndex: 6, map: map
+                }));
+            } else {
+                const l = makeLine([[m.fromLat, m.fromLng], [m.toLat, m.toLng]],
+                    (E_KINDS[m.edgeKind] || E_KINDS.crossing).color, 5);
+                l.setOptions({ strokeStyle: 'shortdash' });   // 점선 = 아직 저장 전
+                l.setMap(map);
+                eOverlays.push(l);
+            }
+        });
+
+        const nodeMode = eMode() === '노드';
         ePick.forEach((p, i) => {
             const el = document.createElement('div');
             el.className = 'nend on';
-            el.textContent = i === 0 ? 'A' : 'B';
+            el.textContent = nodeMode ? '●' : (i === 0 ? 'A' : 'B');
             eOverlays.push(new kakao.maps.CustomOverlay({
                 position: new kakao.maps.LatLng(p[0], p[1]), content: el, zIndex: 7, map: map
             }));
         });
         if (ePick.length === 2) {
-            const l = makeLine(ePick, '#1565c0', 6); l.setMap(map); eOverlays.push(l);
+            // 고른 종류의 색으로 그린다. 저장하고 나면 그래프가 이 색으로 다시 그려지므로,
+            // 저장 전에 잘못 골랐다는 것을 여기서 알아챌 수 있다.
+            const c = (E_KINDS[eKind()] || E_KINDS.crossing).color;
+            const l = makeLine(ePick, c, 6); l.setMap(map); eOverlays.push(l);
         }
-        if (eTarget) {
-            const l = makeLine(eTarget, '#d81b60', 8); l.setMap(map); eOverlays.push(l);
-        }
-        $('e-apply').disabled = !(eMode().startsWith('추가') ? ePick.length === 2 : eTarget);
+        // 저장은 '대기열에 뭔가 있으면' 열린다. 이제 삭제도 같다.
+        $('e-apply').disabled = ePending.length === 0;
+        $('e-undo').disabled = ePending.length === 0;
+        $('e-break').disabled = ePick.length === 0;
     }
 
     function clearEdgePick() {
-        ePick = []; eTarget = null;
+        ePick = [];
         drawEdgePick();
+    }
+
+    /** 이어그리기 사슬만 끊는다. 쌓아둔 것은 그대로 둔다 — 떨어진 구간을 새로 시작할 때 쓴다. */
+    function breakChain() {
+        ePick = [];
+        drawEdgePick();
+        setStatus(ePending.length
+            ? `사슬을 끊었습니다. 대기 ${ePending.length}건은 그대로입니다 — 새 자리를 클릭하세요.`
+            : '사슬을 끊었습니다.', 'wait');
     }
 
     async function applyEdgeEdit() {
         const mode = eMode();
+        const kind = eKind();
+
+        // 쌓아둔 것이 있으면 한 번에 보낸다. 그래프를 다시 만드는 3.4초가 한 번으로 끝난다.
+        if (ePending.length) { await applyPending(); return; }
+
         let q;
-        if (mode.startsWith('추가')) {
+        if (mode === '노드') {
+            if (ePick.length !== 1) return;
+            // to 를 from 과 같게 보낸다. 표가 엣지(양 끝 좌표)를 담게 돼 있어서 칸을 비울 수 없다.
+            q = `action=${encodeURIComponent(mode)}&fromLat=${ePick[0][0]}&fromLng=${ePick[0][1]}`
+              + `&toLat=${ePick[0][0]}&toLng=${ePick[0][1]}`;
+        } else if (mode.startsWith('추가')) {
             if (ePick.length !== 2) return;
             // '추가' 는 서버가 스냅·정사영하고, '추가-고정' 은 찍은 좌표를 그대로 쓴다.
             q = `action=${encodeURIComponent(mode)}&fromLat=${ePick[0][0]}&fromLng=${ePick[0][1]}`
-              + `&toLat=${ePick[1][0]}&toLng=${ePick[1][1]}&kind=crossing`;
-        } else if (mode === '삭제') {
-            if (!eTarget) return;
-            q = `action=삭제&fromLat=${eTarget[0][0]}&fromLng=${eTarget[0][1]}`
-              + `&toLat=${eTarget[1][0]}&toLng=${eTarget[1][1]}`;
-        } else { return; }
+              + `&toLat=${ePick[1][0]}&toLng=${ePick[1][1]}&kind=${encodeURIComponent(kind)}`;
+        } else { return; }   // 삭제는 위에서 대기열로 처리된다
 
         const res = await fetch('/api/manual-edge?' + q, { method: 'POST' }).then(r => r.json());
         if (!res.ok) { setStatus(res.message, 'fail'); return; }
 
-        // 저장은 됐는데 그래프에 안 들어가는 경우가 있다 — 이미 지운 엣지를 또 지우거나,
-        // 좌표가 그래프에서 멀 때다. 엣지 수만 보여주면 성공한 줄 알고 넘어간다.
-        if (res.failed > 0) {
-            setStatus(`저장은 됐지만 ${res.failed}건이 반영되지 않았습니다. `
+        /*
+          저장은 됐는데 그래프에 안 들어가는 경우가 있다 — 이미 지운 엣지를 또 지우거나,
+          좌표가 그래프에서 멀 때다. 엣지 수만 보여주면 성공한 줄 알고 넘어간다.
+
+          ★ 그런데 res.failed 는 <b>MANUAL_EDGES 전체</b>를 다시 적용한 결과다.
+          저장할 때마다 그래프를 통째로 다시 만들기 때문이다. 그래서 절대 성공할 수 없는
+          옛 기록이 하나라도 있으면 <b>그 뒤 모든 저장이 빨간 실패로 보인다.</b>
+          실제로 그랬다 — 같은 삭제가 두 번 저장돼(#29·#30) 뒤엣것이 영원히 실패했고,
+          관리자는 자기가 방금 찍은 점이 안 들어간 줄 알고 같은 일을 반복하게 됐다.
+
+          그래서 서버가 appliedNow 로 '방금 저장한 그것' 만 따로 알려준다.
+          예전 기록의 실패는 실패로 띄우지 않고 곁줄로만 붙인다.
+        */
+        const what = mode.startsWith('추가')
+            ? `${mode}(${(E_KINDS[kind] || {}).label || kind})` : mode;
+
+        /*
+          노드만 놓으면 <b>엣지 수가 안 바뀐다.</b> 엣지 수로만 판단하면
+          '아무 일도 안 일어났다' 고 말하게 된다 — 그래서 노드 수를 따로 본다.
+          늘지 않았으면 실패가 아니라 '이미 그 자리에 있었다' 는 뜻이다(REUSE_M 2m).
+        */
+        if (mode === '노드') {
+            const 늘어남 = res.nodeAfter - res.nodeBefore;
+            setStatus(늘어남 > 0
+                ? `노드를 놓았습니다. 노드 ${res.nodeBefore} → ${res.nodeAfter}${stale}`
+                : `이미 그 자리에 노드가 있어 새로 만들지 않았습니다(노드 ${res.nodeAfter}).${stale}`,
+                늘어남 > 0 ? 'ok' : 'wait');
+            clearEdgePick();
+            await loadManualList();
+            await loadConstruction();
+            buildEditList();
+            await refreshGraph();
+            return;
+        }
+
+        // 옛 기록이 아직 안 먹는 것은 이번 저장과 무관하다. 알리되 가로막지 않는다.
+        const stale = res.failed > 0
+            ? ` (예전 기록 ${res.failed}건은 여전히 반영되지 않습니다 — 목록에서 지우세요)` : '';
+
+        if (res.appliedNow === false) {
+            setStatus(`${what} 를 저장했지만 그래프에 반영되지 않았습니다. `
                 + (res.problems && res.problems.length ? res.problems[res.problems.length - 1] : ''), 'fail');
         } else if (res.edgeBefore === res.edgeAfter) {
-            setStatus(`${mode} 저장했지만 엣지 수가 그대로입니다(${res.edgeAfter}). 이미 반영된 것일 수 있습니다.`, 'fail');
+            setStatus(`${what} 저장했지만 엣지 수가 그대로입니다(${res.edgeAfter}). `
+                + `이미 반영된 것일 수 있습니다.${stale}`, 'fail');
         } else {
-            setStatus(`${mode} 저장. 엣지 ${res.edgeBefore} → ${res.edgeAfter}`, 'ok');
+            setStatus(`${what} 저장. 엣지 ${res.edgeBefore} → ${res.edgeAfter}${stale}`, 'ok');
         }
         clearEdgePick();
+        await loadManualList();
+        await loadConstruction();
+        buildEditList();
+        await refreshGraph();
+    }
+
+    /** 쌓아둔 것을 한 번에 저장한다. */
+    async function applyPending() {
+        const n = ePending.length;
+        setStatus(`${n}건을 저장하는 중… 그래프를 다시 만드느라 몇 초 걸립니다.`, 'wait');
+        $('e-apply').disabled = true;
+
+        let res;
+        try {
+            res = await fetch('/api/manual-edge/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ePending)
+            }).then(r => r.json());
+        } catch (e) {
+            setStatus('저장하지 못했습니다. 쌓아둔 것은 그대로 있습니다: ' + e.message, 'fail');
+            drawEdgePick();
+            return;
+        }
+
+        if (!res.ok) {
+            // 서버가 하나라도 이상하면 아무것도 안 넣는다. 대기열을 비우면 안 된다.
+            setStatus(res.message + ' (쌓아둔 ' + n + '건은 그대로 있습니다)', 'fail');
+            drawEdgePick();
+            return;
+        }
+
+        const stale = res.failed > res.failedNow
+            ? ` (예전 기록 ${res.failed - res.failedNow}건은 여전히 반영되지 않습니다)` : '';
+
+        setStatus(res.failedNow > 0
+            ? `${n}건 저장했지만 ${res.failedNow}건이 그래프에 반영되지 않았습니다. `
+              + (res.problems && res.problems.length ? res.problems[res.problems.length - 1] : '')
+            : `${n}건 저장. 노드 ${res.nodeBefore} → ${res.nodeAfter} · `
+              + `엣지 ${res.edgeBefore} → ${res.edgeAfter}${stale}`,
+            res.failedNow > 0 ? 'fail' : 'ok');
+
+        ePending = [];
+        clearEdgePick();
+        renderQueue();
         await loadManualList();
         await loadConstruction();
         buildEditList();
@@ -1473,23 +1897,101 @@
         box.innerHTML = rows.length ? '' : '<span style="color:#888">직접 수정한 엣지가 없습니다.</span>';
         rows.forEach(m => {
             const div = document.createElement('div');
-            div.style.cssText = 'display:flex; justify-content:space-between; gap:6px; padding:2px 0';
-            const mark = m.action === '삭제' ? '－' : (m.action === '추가-고정' ? '◆' : '＋');
-            div.innerHTML = `<span>${mark} `
-                + `${m.fromLat.toFixed(5)}, ${m.fromLng.toFixed(5)}</span>`;
+            div.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 0';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.dataset.meId = m.id;
+            cb.addEventListener('change', updateSelection);
+            div.appendChild(cb);
+
+            const mark = m.action === '삭제' ? '－'
+                : m.action === '노드' ? '●'
+                : m.action === '추가-고정' ? '◆' : '＋';
+            // 예전에 넣은 행은 EDGE_KIND 가 비어 있을 수 있다. 그때 서버가 쓰는 값이 crossing 이다.
+            const k = (m.action === '삭제' || m.action === '노드')
+                ? null : (E_KINDS[m.edgeKind || 'crossing'] || null);
+            const tag = k
+                ? `<i style="display:inline-block; width:12px; height:4px; `
+                  + `background:${k.color}; vertical-align:middle; margin:0 4px"></i>${k.label}`
+                : (m.edgeKind ? ' ' + escapeHtml(m.edgeKind) : '');
+            const label = document.createElement('span');
+            label.style.cssText = 'flex:1; min-width:0';
+            label.innerHTML = `${mark} ${m.fromLat.toFixed(5)}, ${m.fromLng.toFixed(5)}${tag}`;
+            // 글자를 눌러도 체크되게 한다. 12px 체크박스만 정확히 노려 누르기는 성가시다.
+            label.style.cursor = 'pointer';
+            label.addEventListener('click', () => { cb.checked = !cb.checked; updateSelection(); });
+            div.appendChild(label);
+
             const b = document.createElement('button');
-            b.textContent = '되돌리기';
+            /*
+              '되돌리기' 였는데 '삭제' 로 바꿨다. 하는 일이 MANUAL_EDGES 의 행을 지우는 것이라
+              지운다고 말하는 편이 정확하다. 수정 모드의 [삭제] 와 이름이 겹치지만 자리가 다르다 —
+              저쪽은 '그래프 엣지를 지우는 기록을 남긴다', 여기는 '그 기록 자체를 지운다'.
+            */
+            b.textContent = '삭제';
             b.style.cssText = 'font-size:11px; padding:1px 5px; cursor:pointer';
             b.addEventListener('click', async () => {
                 const r = await fetch(`/api/manual-edge/${m.id}`, { method: 'DELETE' }).then(x => x.json());
                 if (!r.ok) { setStatus(r.message, 'fail'); return; }
-                setStatus(`되돌렸습니다. 엣지 ${r.edgeBefore} → ${r.edgeAfter}`, 'ok');
+                setStatus(`기록을 지웠습니다. 엣지 ${r.edgeBefore} → ${r.edgeAfter}`, 'ok');
                 await loadManualList();
                 await refreshGraph();
             });
             div.appendChild(b);
             box.appendChild(div);
         });
+
+        $('e-list-head').hidden = rows.length === 0;
+        $('e-all').checked = false;
+        updateSelection();
+    }
+
+    /** 지금 고른 기록의 ID 들. */
+    function selectedManualIds() {
+        return [...document.querySelectorAll('#e-list input[type="checkbox"]:checked')]
+            .map(c => Number(c.dataset.meId));
+    }
+
+    function updateSelection() {
+        const n = selectedManualIds().length;
+        const all = document.querySelectorAll('#e-list input[type="checkbox"]').length;
+        $('e-sel-count').textContent = n ? `${n}건 선택` : '';
+        $('e-del-sel').disabled = n === 0;
+        $('e-del-sel').textContent = n ? `선택 삭제 (${n})` : '선택 삭제';
+        // 전체 체크박스는 '지금 다 골라져 있는가' 를 비춘다. 하나 풀면 같이 풀려야 한다.
+        $('e-all').checked = all > 0 && n === all;
+    }
+
+    async function deleteSelectedManual() {
+        const ids = selectedManualIds();
+        if (!ids.length) return;
+
+        // 되돌릴 수 없다. 여러 건이라 실수하면 손해가 크므로 여기서 묻는다.
+        if (!confirm(`고른 기록 ${ids.length}건을 지웁니다. 되돌릴 수 없습니다.`)) return;
+
+        $('e-del-sel').disabled = true;
+        setStatus(`${ids.length}건을 지우는 중… 그래프를 다시 만드느라 몇 초 걸립니다.`, 'wait');
+
+        let r;
+        try {
+            r = await fetch('/api/manual-edge?ids=' + ids.join(','), { method: 'DELETE' })
+                .then(x => x.json());
+        } catch (e) {
+            setStatus('지우지 못했습니다: ' + e.message, 'fail');
+            updateSelection();
+            return;
+        }
+        if (!r.ok) { setStatus(r.message, 'fail'); updateSelection(); return; }
+
+        // 고른 것보다 적게 지워졌으면 목록이 낡았던 것이다. 숫자를 그대로 보여준다.
+        const miss = r.asked - r.deleted;
+        setStatus(`${r.deleted}건을 지웠습니다`
+            + (miss ? ` (${miss}건은 이미 없었습니다)` : '')
+            + `. 노드 ${r.nodeBefore} → ${r.nodeAfter} · 엣지 ${r.edgeBefore} → ${r.edgeAfter}`, 'ok');
+
+        await loadManualList();
+        await refreshGraph();
     }
 
     function makeLine(coords, color, weight) {
@@ -1505,13 +2007,167 @@
             ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    /* ── 내 이동 기록 ──────────────────────────────────────────
+       안내에 쓰는 도보 속도가 어느 기록에서 나왔는지 보는 자리다.
+       사용자 화면은 정류장 하나에 묶인 목록만 보여줘서, 다른 정류장에서 잰 기록이
+       안내를 끌어당기고 있어도 보이지 않았다. */
+
+    /**
+     * '말이 안 되는 속도'로 표시할 경계(m/분).
+     *
+     * <p><b>거르지는 않는다.</b> 여기서 하는 일은 눈에 띄게 하는 것뿐이다 —
+     * 무엇이 이상한지 사람이 보고 정하라는 화면이지, 화면이 판단할 자리가 아니다.
+     *
+     * <p>20 m/분 = 시속 1.2km, 120 m/분 = 시속 7.2km. 전동휠체어 법정 최고속도가
+     * 6km/h 라 그 위는 오기록으로 본다.
+     */
+    const WR_MIN_MPM = 20;
+    const WR_MAX_MPM = 120;
+
+    function wrOdd(mpm) {
+        return mpm != null && (mpm < WR_MIN_MPM || mpm > WR_MAX_MPM);
+    }
+
+    /** 초를 '9분 12초' 로. 분만 쓰면 왜 그 배수가 나왔는지 안 보인다. */
+    function wrDuration(sec) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return s === 0 ? `${m}분` : `${m}분 ${s}초`;
+    }
+
+    async function loadWalkRecords() {
+        const speedEl = $('wr-speed');
+        const listEl = $('wr-list');
+        speedEl.textContent = '불러오는 중…';
+        listEl.innerHTML = '';
+
+        let data;
+        try {
+            const res = await fetch('/api/walk/all');
+            if (res.status === 401) {
+                $('wr-who').textContent = '';
+                speedEl.textContent = '로그인해야 기록을 볼 수 있습니다.';
+                return;
+            }
+            data = await res.json();
+        } catch (e) {
+            speedEl.textContent = '기록을 불러오지 못했습니다.';
+            return;
+        }
+
+        $('wr-who').textContent = data.username ? `· ${data.username}` : '';
+
+        const sp = data.speed || {};
+        const rows = data.records || [];
+
+        /*
+          이 줄이 이 패널의 요점이다 — 아래 목록이 합쳐져서 안내가 어떤 값을 쓰는지.
+          배수를 같이 적는 이유: 'm/분' 만으로는 그것이 얼마나 느린 것인지 감이 안 온다.
+        */
+        speedEl.innerHTML = sp.mPerMin != null
+            ? `안내에 쓰는 속도 <b>${sp.mPerMin} m/분</b>`
+              + (sp.walkRatio != null ? ` · 도보 기준의 <b>${sp.walkRatio}배</b>` : '')
+              + `<br><span style="color:#456">기록 ${rows.length}건 중 계산에 쓴 것 ${sp.ratioCount ?? 0}건`
+              + (sp.ratioLow != null ? ` · 편차 ${sp.ratioLow}~${sp.ratioHigh}배` : '')
+              + `</span>`
+            : '아직 계산에 쓸 기록이 없습니다.';
+
+        if (rows.length === 0) {
+            listEl.innerHTML = '<div style="color:#888; padding:6px 4px">잰 기록이 없습니다.</div>';
+            return;
+        }
+
+        listEl.innerHTML = rows.map(r => {
+            const odd = wrOdd(r.speedMPerMin);
+            const excluded = r.excludedYn === 'Y';
+            const where = r.stopName ? escapeHtml(r.stopName) : '정류장 미지정';
+            const from = (r.startLat != null && r.startLng != null)
+                ? `${r.startLat.toFixed(5)}, ${r.startLng.toFixed(5)}` : '출발 좌표 없음';
+
+            return `<div class="wr-row${odd ? ' is-odd' : ''}${excluded ? ' is-excluded' : ''}">`
+                + `<span class="wr-where">${where}`
+                + `${excluded ? '<span class="wr-tag">계산 제외</span>' : ''}`
+                + `${r.regionId ? `<span class="wr-tag">${escapeHtml(r.regionId)}</span>` : ''}</span>`
+                + `<span class="wr-mpm">${r.speedMPerMin != null ? r.speedMPerMin + ' m/분' : '거리 없음'}</span>`
+                + `<span class="wr-sub">#${r.id} · ${r.distanceM != null ? Math.round(r.distanceM).toLocaleString() + 'm' : '거리 없음'}`
+                + ` · ${wrDuration(r.elapsedSec)} · ${escapeHtml(String(r.startedAt || '').slice(0, 16))}</span>`
+                + `<span class="wr-sub" style="color:#888">출발 ${from}</span>`
+                + `<span class="wr-actions">`
+                + `<button data-wr-toggle="${r.id}" data-wr-to="${excluded ? 'false' : 'true'}">`
+                + `${excluded ? '계산에 넣기' : '계산에서 빼기'}</button>`
+                + `<button class="danger" data-wr-del="${r.id}">삭제</button>`
+                + `</span></div>`;
+        }).join('');
+    }
+
+    /*
+      버튼은 목록을 다시 그릴 때마다 새로 생기므로 개별로 달지 않고 부모에서 받는다.
+      개별로 달면 다시 그릴 때 옛 요소에 붙은 핸들러가 남아 두 번 도는 일이 생긴다.
+    */
+    $('wr-list').addEventListener('click', async (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+
+        const toggleId = t.dataset.wrToggle;
+        const delId = t.dataset.wrDel;
+
+        try {
+            if (toggleId) {
+                await fetch(`/api/walk/${toggleId}/excluded?excluded=${t.dataset.wrTo}`, { method: 'PUT' });
+            } else if (delId) {
+                // 되돌릴 수 없으니 여기서 묻는다. 서버는 묻지 않는다.
+                if (!confirm(`기록 #${delId} 를 아주 지웁니다. 되돌릴 수 없습니다.`)) return;
+                await fetch(`/api/walk/${delId}`, { method: 'DELETE' });
+            } else {
+                return;
+            }
+        } catch (err) {
+            alert('처리하지 못했습니다.');
+            return;
+        }
+        loadWalkRecords();      // 속도가 바뀌었을 것이라 줄 하나만 고치지 않고 다시 읽는다
+    });
+
+    $('wr-reload').addEventListener('click', loadWalkRecords);
+    $('wr-fold').addEventListener('click', () => {
+        const box = $('walkrec');
+        box.classList.toggle('is-folded');
+        $('wr-fold').textContent = box.classList.contains('is-folded') ? '+' : '−';
+    });
+
     $('t-conline').addEventListener('change', applyConstructionOverlays);
     $('t-noteline').addEventListener('change', applyConstructionOverlays);
     $('t-graph').addEventListener('change', refreshGraph);
 
     document.querySelectorAll('input[name="emode"]').forEach(r =>
         r.addEventListener('change', async () => {
+            /*
+              모드가 바뀌면 쌓아둔 것도 버린다. 추가와 삭제가 한 대기열에 섞이면
+              [저장] 이 무엇을 하는지 사용자가 알 수 없기 때문이다.
+
+              ★ 다만 <b>묻고 나서 버린다.</b> 예전에는 말없이 버리고 상태줄에 한 줄만 남겼는데,
+              모드는 실수로도 눌리는 자리라 <b>열 몇 번 클릭한 것이 한 번에 날아갔다.</b>
+              (2026-08-24: 사용자가 실제로 이렇게 2건을 잃었다.)
+            */
+            if (ePending.length) {
+                const n = ePending.length;
+                if (!confirm(`쌓아둔 ${n}건이 아직 저장되지 않았습니다.
+`
+                        + `모드를 바꾸면 버려집니다. 계속할까요?
+
+`
+                        + `[취소] 를 누르면 지금 모드에 머물러 [저장] 할 수 있습니다.`)) {
+                    const back = document.querySelector(`input[name="emode"][value="${ePrevMode}"]`);
+                    if (back) { back.checked = true; }
+                    setStatus(`모드를 그대로 뒀습니다. 대기 ${n}건 — [저장] 하거나 [전부 취소] 하세요.`, 'wait');
+                    return;
+                }
+                setStatus(`모드를 바꿔서 쌓아둔 ${n}건을 버렸습니다.`, 'wait');
+                ePending = [];
+            }
+            ePrevMode = eMode();
             clearEdgePick();
+            renderQueue();
             const m = eMode();
 
             // 제보 등록이 켜져 있으면 끈다. 둘 다 켜지면 클릭이 어느 쪽으로 갈지 알 수 없다
@@ -1525,9 +2181,19 @@
                 : m === '추가-고정'
                     ? '찍은 자리에 노드를 만듭니다. 스냅하지 않으니 없는 보도를 직접 놓을 때 쓰세요. '
                       + '이어 그리려면 앞서 찍은 점을 다시 클릭하면 됩니다(2m 안이면 같은 노드).'
+                : m === '노드'
+                    ? '한 점만 클릭합니다. 선은 안 생깁니다 — 아무 데도 안 붙은 점이라 '
+                      + '길찾기는 아직 못 씁니다. 꺾이는 자리를 먼저 다 찍어두고 [추가] 로 이어 붙이세요.'
                 : m === '삭제'
-                    ? '지울 엣지 근처를 클릭하세요. 아파트를 가로지르는 등 실제로 못 다니는 엣지를 뺍니다.'
+                    ? '지울 엣지 근처를 여러 번 클릭해 고르고 마지막에 [저장]. '
+                      + '이미 고른 것을 다시 누르면 풀립니다. 아파트를 가로지르는 등 실제로 못 다니는 엣지를 뺍니다.'
                     : '끄기 상태입니다.';
+
+            // 종류는 추가할 때만 쓴다. 삭제·끄기에서는 흐리게 하고 손을 못 대게 막는다 -
+            // 고를 수 있게 두면 삭제할 때 고른 값이 반영되는 줄 알게 된다.
+            const addMode = m.startsWith('추가');   // '노드' 는 종류가 없다
+            $('e-kind').classList.toggle('off', !addMode);
+            document.querySelectorAll('input[name="ekind"]').forEach(k => k.disabled = !addMode);
 
             // 엣지를 보고 골라야 하므로 그래프를 자동으로 켠다.
             if (m && !$('t-graph').checked) {
@@ -1538,8 +2204,37 @@
                 setStatus('이 축척에서는 그래프가 안 보입니다. 확대하세요.', 'fail');
             }
         }));
+    document.querySelectorAll('input[name="ekind"]').forEach(r =>
+        r.addEventListener('change', () => {
+            drawEdgePick();   // 미리보기 선을 고른 종류의 색으로 다시 그린다
+            const k = E_KINDS[eKind()];
+            if (ePick.length && k) { setStatus(`종류를 '${k.label}' 로 바꿨습니다.`, 'wait'); }
+        }));
     $('e-apply').addEventListener('click', applyEdgeEdit);
-    $('e-clear').addEventListener('click', () => { clearEdgePick(); setStatus('선택을 취소했습니다.', 'wait'); });
+    $('e-del-sel').addEventListener('click', deleteSelectedManual);
+    $('e-all').addEventListener('change', () => {
+        const on = $('e-all').checked;
+        document.querySelectorAll('#e-list input[type="checkbox"]').forEach(c => { c.checked = on; });
+        updateSelection();
+    });
+    $('e-break').addEventListener('click', breakChain);
+    $('e-undo').addEventListener('click', () => {
+        const gone = ePending.pop();
+        if (!gone) return;
+        // 사슬 중간을 빼면 앞뒤가 안 맞는다. 시작점도 같이 되돌린다.
+        ePick = (gone.action === '노드' || gone.action === '삭제')
+            ? ePick : [[gone.fromLat, gone.fromLng]];
+        renderQueue();
+        setStatus(`마지막 1건을 뺐습니다. 대기 ${ePending.length}건.`, 'wait');
+    });
+    $('e-clear').addEventListener('click', () => {
+        const n = ePending.length;
+        ePending = [];
+        clearEdgePick();
+        renderQueue();
+        setStatus(n ? `쌓아둔 ${n}건을 버렸습니다. 저장 전이라 서버에는 아무것도 안 갔습니다.`
+                    : '선택을 취소했습니다.', 'wait');
+    });
 
     $('ed-note-edit').addEventListener('change', () => {
         drawEditNote();   // 편집 중이면 분홍, 아니면 검정
@@ -1564,6 +2259,7 @@
 
     // ── 제보
     $('t-report').addEventListener('change', applyReportOverlays);
+    $('t-report-done').addEventListener('change', applyReportOverlays);
 
     $('r-add').addEventListener('change', () => {
         if ($('r-add').checked) {

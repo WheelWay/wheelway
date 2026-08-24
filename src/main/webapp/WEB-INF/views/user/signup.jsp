@@ -37,6 +37,9 @@
         .form-text { color:#ff1616; font-size:.72rem; font-weight:700; }
         .is-valid, .is-invalid { background-image:none !important; padding-right:1.2rem !important; }
         .is-valid { border:0 !important; border-bottom:1.5px solid #80a973 !important; } .is-invalid { border:0 !important; border-bottom:1.5px solid #d45e5e !important; }
+        /* 회원가입 결과 창. 부트스트랩 modal 을 그대로 쓰고 모서리·그림자만 이 화면에 맞춘다. */
+        .signup-result { border:0; border-radius:1rem; box-shadow:0 18px 42px rgba(85, 66, 45, .18); }
+        .signup-result-message { font-size:clamp(1rem, 1.15vw, 1.25rem); font-weight:700; letter-spacing:-.05em; }
         @media (min-width:1200px) { .signup-panel { padding:3.25rem 3.1rem !important; } }
         @media (max-width:767.98px) { .page-shell { align-items:flex-start; padding:12px; } .signup-panel { min-height:auto; aspect-ratio:auto; padding:2rem 1.25rem !important; } .signup-form { width:100%; max-width:510px; } }
         @media (max-width:420px) { .input-group .btn { min-width:76px; padding-inline:.35rem; font-size:.74rem; } .signup-panel h1 { font-size:1.5rem; } }
@@ -116,12 +119,41 @@
     </section>
 </main>
 
+<!--
+  회원가입 결과.
+
+  예전에는 alert() 로 알리고 곧바로 메인(/)으로 보냈다. 둘 다 문제였다 -
+  alert 는 브라우저가 그리는 것이라 화면과 따로 놀았고, 메인으로 보내니
+  <b>가입한 사람이 바로 로그인할 자리로 못 갔다</b>.
+
+  이 화면은 부트스트랩을 이미 쓰고 있어서 modal 을 그대로 쓴다.
+  직접 만들면 초점 가두기·Esc·배경 클릭을 다시 짜야 한다.
+-->
+<div class="modal fade" id="signupResultModal" tabindex="-1" aria-labelledby="signupResultMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content signup-result">
+            <button class="btn-close ms-auto mt-3 me-3" type="button" data-bs-dismiss="modal" aria-label="닫기"></button>
+            <div class="modal-body text-center pt-0 pb-4 px-4">
+                <p class="signup-result-message mb-4" id="signupResultMessage">회원가입에 성공하셨습니다.</p>
+                <a class="btn btn-primary btn-signup fw-bold px-4" href="/user/login">로그인 화면으로 돌아가기</a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
 <script>
     const contextPath = '${pageContext.request.contextPath}';
     const form = document.getElementById('signupForm');
     const submitButton = form.querySelector('.btn-signup');
     const checked = { username: false, email: false };
+
+    /*
+      가입에 성공했는가. finally 에서 [회원가입] 버튼을 <b>다시 켜지 않으려고</b> 들고 있다.
+      결과 창을 x 로 닫으면 값이 그대로 남은 폼으로 돌아오는데, 그때 한 번 더 누르면
+      '이미 있는 아이디' 로 실패한다 - 사용자에게는 가입이 안 된 것처럼 보인다.
+    */
+    let signupDone = false;
 
     function setMessage(id, text, success) {
         const message = document.getElementById(id);
@@ -235,12 +267,12 @@
             const data = await response.json();
             setMessage('formMessage', data.msg, data.result === 1);
             if (data.result === 1) {
-                alert(data.msg);
-                location.href = '/';
+                signupDone = true;
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('signupResultModal')).show();
             }
         } catch (error) {
             setMessage('formMessage', '서버에 연결하지 못했습니다. Spring Boot 실행 상태를 확인해 주세요.', false);
-        } finally { submitButton.disabled = false; }
+        } finally { submitButton.disabled = signupDone; }
     });
 </script>
 </body>

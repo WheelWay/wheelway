@@ -53,6 +53,23 @@
     </select>
 
     <!--
+      정류장으로 나누지 않은 전체 목록.
+
+      ★ 왜 필요한가: 안내에 쓰는 속도(m/분)는 정류장을 안 가리고 <b>기록 전부</b>에서 낸다.
+      그런데 화면이 볼 수 있던 목록은 정류장 하나에 묶인 것뿐이었다 — 그래서
+      '왜 도보가 26분으로 나오지'를 확인하려 해도 그 값을 만든 기록이 화면에 안 보였다.
+      실제로 그렇게 됐다(2026-08-24: 보은에서 잰 기록 두 건이 청주 안내를 지배했다).
+
+      정렬은 최근 것이 위로. 방금 잰 기록을 바로 확인하는 것이 이 목록의 주된 쓰임이다.
+    -->
+    <select id="getAllRecords" resultType="WalkRecordDTO">
+        SELECT <include refid="columns"/>
+          FROM WALK_RECORDS
+         WHERE USERNAME = #{username}
+         ORDER BY ID DESC
+    </select>
+
+    <!--
       안내 계산에 쓸 것만.
 
       minSec/maxSec 로 거르는 이유

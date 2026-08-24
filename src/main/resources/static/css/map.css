@@ -21,8 +21,15 @@
     --end:    #c62828;
     --route:  #1565c0;
 
-    --rail-w:  108px;
-    --panel-w: 372px;
+    /*
+      레일에서 덜어낸 24px 을 패널이 그대로 받는다 — 둘의 합(500px)은 그대로라
+      지도 폭은 안 줄어든다. 지도를 깎아 칸을 넓히면 이 화면이 지는 싸움이다.
+
+      레일은 아이콘 + 두 글자만 서면 되는 자리라 104px 로 충분하다(글자 15px).
+      길 이름은 길어서 잘리기 쉬우므로 남는 폭은 패널이 갖는 것이 맞다.
+    */
+    --rail-w:  104px;
+    --panel-w: 396px;
 
     /* 정류장 칸. 접으면 손잡이(16px)만 남는다. */
     --side-w:  260px;
@@ -56,24 +63,44 @@ input  { font: inherit; color: inherit; }
     gap: 6px;
 }
 
+/*
+  ★ 아이콘 위 · 글자 아래로 쌓는다.
+
+  글자만 있을 때는 넷이 같은 크기의 글자 덩어리라 '읽고 나서' 구분됐다.
+  아이콘이 앞에 서면 읽기 전에 갈린다.
+
+  min-height 를 주는 이유: MY 는 아이콘이 없어서 그냥 두면 혼자 낮아진다.
+  padding 만으로는 아이콘 있는 칸과 없는 칸의 높이를 맞출 수 없다.
+*/
 .rail-tab {
     border: 0;
     background: transparent;
-    padding: 22px 0;
+    padding: 12px 0;
     margin-right: 10px;
-    font-size: 19px; font-weight: 700;
+    font-size: 15px; font-weight: 700;
     color: var(--ink);
     text-align: center;
     border-radius: 0 10px 10px 0;
     /* 제보 탭만 <a> 다. 나머지 <button> 과 같아 보이게 맞춘다. */
-    display: block;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 72px;          /* 아이콘 있는 칸의 실제 높이. MY 가 혼자 낮아지지 않게. */
     width: 100%;
     text-decoration: none;
 }
 
+/* 인라인 SVG 는 기본이 inline 이라 아래에 글꼴 여백이 붙는다 — gap 이 어긋난다. */
+.rail-tab svg { display: block; }
+
 .rail-tab:hover    { background: var(--cream-deep); }
 .rail-tab.is-active { background: var(--gold); color: #3a2f14; }
-.rail-tab.is-soon   { color: var(--ink-soft); font-weight: 600; }
+/*
+  .rail-tab.is-soon (흐린 글씨) 규칙은 지웠다 — 붙는 곳이 하나도 없어졌다 (2026-08-24).
+  '아직 안 되는 탭'은 이제 눌렀을 때 상태줄로 알린다. 되살릴 일이 있으면 git 이력에 있다.
+*/
 
 /*
   마이페이지. 흰 칸으로 고정한다 — 버스·택시(흐린 글씨)와도, 지도(골드)와도 다른 자리라는 표시다.
@@ -84,13 +111,12 @@ input  { font: inherit; color: inherit; }
 .rail-my:hover   { background: var(--cream-deep); }
 .rail-my:active  { background: var(--gold); color: #3a2f14; }
 
-/* 제보. 아이콘과 글자를 한 줄에 붙인다.
-   line-height 를 박아 다른 탭과 높이를 맞춘다 — 글자가 작아 그냥 두면 3px 낮아진다. */
-.rail-report {
-    display: flex; align-items: center; justify-content: center; gap: 4px;
-    font-size: 17px;
-    line-height: 26px;
-}
+/*
+  제보. 이제 .rail-tab 과 똑같은 구조(아이콘 위·글자 아래)라 따로 줄 것이 없다.
+
+  전에는 여기서 display:flex 를 한 줄(row)로 다시 깔고 font-size 를 17px 로 덮었다.
+  그 두 줄이 남아 있으면 .rail-tab 의 flex-direction:column 을 이긴다 — 지웠다.
+*/
 
 /*
   레일 맨 아래 아이콘 둘 — 메인으로 돌아가기, 그리고 관리자 입구.
@@ -127,8 +153,15 @@ input  { font: inherit; color: inherit; }
 .panel-inner { padding: 22px 20px 28px; }
 
 /* ── 출발·도착 입력 ────────────────────────────────────────
-   시안 배치다. 출발 칸 → '현재위치 찾기' → 도착 칸 → 바로가기가 세로로 쌓인다. */
-.io { display: block; }
+   출발 칸 → '현재위치 찾기' → 도착 칸 → 바로가기가 세로로 쌓인다.
+
+   ★ 알약(999px)에서 둥근 네모로 바꿨다. 세 줄이 붙어 있을 때 알약은 서로
+     맞닿는 곳이 곡선이라 어디가 한 칸인지 눈으로 끊기지 않았다.
+     모서리를 12px 로 줄이고 줄 사이를 벌리니 '세 칸'으로 읽힌다.
+
+   ★ 배경을 크림에서 흰색으로. 패널 바탕이 크림이라 같은 색끼리는
+     테두리 선 하나로만 갈렸다. 흰 칸이 바탕 위에 떠 보여야 '쓰는 곳'이 된다. */
+.io { display: flex; flex-direction: column; gap: 8px; }
 /* 택시 탭에서는 통째로 감춘다. display 를 박아뒀으므로 [hidden] 만으로는 안 사라진다. */
 .io[hidden] { display: none; }
 
@@ -137,13 +170,17 @@ input  { font: inherit; color: inherit; }
     display: flex;
     align-items: center;
     gap: 10px;
-    background: var(--cream-deep);
-    border: 1.5px solid var(--edge);
-    border-radius: 999px;
-    padding: 14px 18px;
+    background: #fff;
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 12px 15px;
 }
 
-.field:focus-within { border-color: var(--gold); background: #fff; }
+/* 테두리만 바꾸면 1px 이라 잘 안 보인다 — 바깥에 옅은 링을 하나 더 준다. */
+.field:focus-within {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(242, 193, 78, .25);
+}
 
 .field > svg { flex: 0 0 auto; color: var(--ink-soft); }
 
@@ -205,16 +242,22 @@ input  { font: inherit; color: inherit; }
 .suggest-top { box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
 
 /* ── 두 칸 사이 줄 ─────────────────────────────────────────
-   왼쪽에 '현재위치 찾기', 오른쪽 끝에 교체 버튼이 선다. */
-.io-mid { display: flex; align-items: center; justify-content: space-between; }
+   왼쪽에 '현재위치 찾기', 오른쪽 끝에 교체 버튼이 선다.
+
+   ★ 전에는 이 줄만 테두리 없는 맨 글자였다. 출발·도착 칸 사이에 성격이 다른 것이
+     끼어 있어서 세 줄이 한 덩어리로 안 읽혔다. 위아래 칸과 같은 모양으로 맞춘다 —
+     누르는 것이지 입력하는 것은 아니지만, '출발지를 정하는 세 가지 방법'이라는 점에서
+     같은 줄에 서는 것이 맞다.
+
+   align-items:stretch 라야 교체 버튼이 옆 칸과 같은 높이로 선다. */
+.io-mid { display: flex; align-items: stretch; gap: 8px; }
 
 .swap {
     flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px;
-    margin-right: 2px;
-    border: 0; border-radius: 8px;
-    background: transparent;
+    width: 48px;
+    border: 1px solid var(--edge); border-radius: 12px;
+    background: #fff;
     color: var(--ink-soft);
     padding: 0;
 }
@@ -222,20 +265,27 @@ input  { font: inherit; color: inherit; }
 .swap:hover { background: var(--cream-deep); color: var(--ink); }
 
 /* ── 보조 버튼 ─────────────────────────────────────────────
-   두 입력 칸 사이에 낀다. 시안에서 칸보다 살짝 안쪽으로 들여쓴 자리다. */
+   '현재위치 찾기'. 위아래 입력 칸과 같은 흰 칸이고, 남는 폭을 전부 먹는다. */
 .mini {
-    display: inline-flex; align-items: center; gap: 6px;
-    border: 0; background: transparent;
-    padding: 8px 6px 8px 18px;
-    font-size: 13.5px; color: var(--ink-soft);
+    flex: 1 1 auto; min-width: 0;
+    display: inline-flex; align-items: center; gap: 10px;
+    border: 1px solid var(--edge); border-radius: 12px;
+    background: #fff;
+    padding: 12px 15px;
+    font-size: 15px; color: var(--ink-soft);
+    text-align: left;
 }
 
-.mini:hover { color: var(--ink); }
+.mini:hover { background: var(--cream-deep); color: var(--ink); }
 
-/* 집 · 회사 · 자주가는 경로 */
+/*
+  집 · 회사 · 자주가는 경로 — 모양은 그대로 둔다.
+  .io 가 flex(gap:8px)로 바뀌면서 위 여백이 8px 더 붙는다.
+  padding-top 을 13 → 5 로 낮춰 보이는 간격은 전과 같게 맞춘다.
+*/
 .shortcuts {
     display: flex; align-items: center; gap: 18px;
-    padding: 13px 6px 0 18px;
+    padding: 5px 6px 0 18px;
 }
 
 .shortcut {
@@ -343,28 +393,20 @@ input  { font: inherit; color: inherit; }
 
 .route-dist { font-size: 15px; color: var(--ink-soft); }
 
+/*
+  밑줄을 뗐다 (2026-08-24). 이 선은 아래의 '이동 설명' 과 가르는 선이었는데
+  그 칸이 없어져서, 남겨 두면 패널 끝에 걸린 <b>이유 없는 줄</b>이 된다.
+*/
 .route-note {
     padding: 6px 4px 14px;
     font-size: 12.5px; color: var(--ink-soft);
-    border-bottom: 1px solid var(--edge);
 }
 
-.steps-head {
-    padding: 14px 4px 8px;
-    font-size: 13px; font-weight: 700;
-}
-
-.steps { list-style: none; margin: 0; padding: 0; }
-
-/* 아직 채우지 않은 자리. 도로명 데이터가 생기면 여기에 단계가 들어온다. */
-.steps-empty {
-    padding: 26px 12px;
-    border: 1px dashed var(--edge);
-    border-radius: 10px;
-    text-align: center;
-    font-size: 12.5px; color: var(--ink-soft);
-    background: var(--cream-deep);
-}
+/*
+  '이동 설명'(.steps-head/.steps/.steps-empty)은 2026-08-24 에 뺐다.
+  '준비 중입니다' 만 뜨는 빈 상자였다 — 자세한 사정은 map.html 의 #pane-route 참고.
+  ★ .taxi-steps 는 이것과 다른 것이다. 택시 안내가 쓰고 있으니 지우지 말 것.
+*/
 
 /* ── 최근경로 ─────────────────────────────────────────────── */
 .section-title { margin: 0 0 9px; padding-left: 4px; font-size: 15.5px; font-weight: 700; }
@@ -1169,13 +1211,31 @@ input  { font: inherit; color: inherit; }
 /* ── 좁은 화면 ─────────────────────────────────────────────
    데스크톱이 기준이다. 여기서는 레이아웃이 깨지지 않을 만큼만 손본다.
 
-   왼쪽(레일 108 + 패널 372)은 폭이 변해도 크기가 그대로다.
+   왼쪽(레일 104 + 패널 396)은 폭이 변해도 크기가 그대로다.
    창을 줄이거나 늘리면 지도만 줄고 는다 — 전에는 1000px 아래에서 왼쪽도 같이
    줄었는데, 글자 크기가 화면마다 달라 보여서 없앴다.
 
-   아래 한 곳만 예외다. 760px 밑에서는 왼쪽을 그대로 두면 지도가 설 자리가 없어서
-   세로로 쌓는다. 크기를 줄이는 게 아니라 배치를 바꾸는 것이다. */
-@media (max-width: 760px) {
+   아래 한 곳만 예외다. 여기서부터는 왼쪽을 그대로 두면 지도가 설 자리가 없어서
+   세로로 쌓는다. 크기를 줄이는 게 아니라 배치를 바꾸는 것이다.
+
+   ★ 기준을 760 → 900px 으로 올렸다 (2026-08-23, 태블릿 대응).
+
+   768×1024(아이패드 세로)가 760 바로 위에 걸려서 가로 배치로 남았는데,
+   그러면 레일 104 + 패널 396 = 500 을 빼고 지도에 268px 밖에 안 남는다.
+   게다가 버스 탭에서는 정류장 칸이 100% 폭으로 줄바꿈하면서
+   <b>지도 폭이 0 이 됐다</b> — 지도가 통째로 사라졌다(실측 확인).
+   세로로 쌓으면 지도가 폭을 다 쓰므로 둘 다 없어진다.
+
+   ★ 두 번째 조건은 <b>태블릿 가로</b>다.
+
+   1024×768 가로는 폭만 보면 넉넉해 보이지만, 손으로 쓰는 화면에서 셋을 나란히
+   세우면 지도가 524px 로 줄고 정류장 칸은 화면 밖으로 밀려 스크롤해야 나온다.
+   세로로 쌓으면 지도가 1009px 를 쓴다 — 길을 보는 화면에서는 이쪽이 낫다.
+
+   폭이 아니라 pointer:coarse 를 같이 보는 이유: 창을 1024 로 줄인 데스크톱까지
+   이 배치로 끌고 오지 않으려는 것이다. 거기서는 마우스가 있고 창을 넓힐 수 있다. */
+@media (max-width: 900px),
+       (max-width: 1180px) and (pointer: coarse) {
     .shell { flex-direction: column; height: auto; min-height: 100%; }
 
     .rail {
@@ -1184,7 +1244,11 @@ input  { font: inherit; color: inherit; }
         gap: 0; padding: 0;
         border-right: 0; border-bottom: 1px solid var(--edge);
     }
-    .rail-tab { flex: 1 1 0; margin: 0; padding: 14px 0; border-radius: 0; }
+    /* 가로줄에서는 min-height 가 띠를 통째로 두껍게 만든다 — 아이콘·글자 간격만 줄여 세운다. */
+    .rail-tab {
+        flex: 1 1 0; margin: 0; padding: 9px 0; border-radius: 0;
+        min-height: 0; gap: 4px; font-size: 13px;
+    }
 
     /* 가로줄이 되면 '맨 아래'가 없다. 둘을 오른쪽 끝으로 나란히 보낸다.
        auto 는 앞쪽 하나(.rail-home)에만 — 둘 다 주면 사이가 벌어진다. */
@@ -1200,6 +1264,28 @@ input  { font: inherit; color: inherit; }
 
     /* 좁은 화면에서는 지도가 먼저 보여야 한다. 높이를 뷰포트에 맞춰 고정한다. */
     .map-area { order: 1; flex: 0 0 auto; height: 58vh; min-height: 320px; }
+
+    /*
+      ★ 정류장 칸을 맨 아래로 (2026-08-23).
+
+      order 를 안 주면 .side 는 기본값 0 이라 map-area(1)·panel(2) 보다 앞에 선다.
+      DOM 순서가 레일 → 패널 → 정류장 → 지도 라서, 세로로 쌓으면
+      <b>레일 다음에 정류장 칸이 오고 지도가 그 아래로 밀렸다</b> —
+      700×900 에서 지도가 y=493 이었다. 바로 위 줄에 '지도가 먼저 보여야 한다'고
+      적어 놓고 버스 탭에서만 그 반대였던 셈이다.
+
+      손잡이(.side-handle)가 칸 아래로 24px 튀어나오므로 그만큼 자리를 비워 둔다.
+    */
+    .side { order: 3; margin-bottom: 30px; }
+
+    /*
+      ★ 세로로 쌓으면 패널이 화면 폭을 통째로 먹는다. 아이패드 가로에서는
+        입력칸 하나가 1009px 이 되어 '현재 위치' 다섯 글자가 허허벌판에 놓인다.
+        읽는 폭을 묶어 두고 가운데 세운다 — 값은 데스크톱 패널의 안쪽 폭(356px)의
+        두 배 근처로, 한 줄이 너무 길어지지 않는 선이다.
+    */
+    .panel-inner,
+    .side-body { max-width: 680px; margin-left: auto; margin-right: auto; }
 }
 
 /* ── 정류장 칸 (오른쪽 세로 패널) ───────────────────────────────
@@ -1282,8 +1368,18 @@ input  { font: inherit; color: inherit; }
   좁은 화면에서는 세로로 세울 수 없다. 지도까지 셋이 나란히 서면 셋 다 못 쓴다.
   밖에서 폰으로 쓰는 것이 실사용이라 여기가 오히려 중요하다.
   → 칸을 아래로 내려 쌓고, 접기는 그대로 살려 둔다.
+
+  ★ 기준을 980 → 1180px 으로 올렸다 (2026-08-23, 태블릿 대응).
+
+  1024×768(아이패드 가로)이 980 바로 위라서 셋이 나란히 섰는데,
+  104 + 396 + 285 = 785 를 빼고 <b>지도에 239px</b> 밖에 안 남았다(실측).
+  길찾기 화면에서 지도가 명함만 해지는 폭이다.
+  1180 아래로 내리면 정류장 칸이 지도 밑으로 내려가고 지도가 524px 를 쓴다.
+
+  1180 인 이유: 아이패드 프로 11인치 가로(1194)까지는 셋이 나란히 서도
+  지도가 400px 을 넘긴다. 그 위는 데스크톱과 같이 둔다.
 */
-@media (max-width: 980px) {
+@media (max-width: 1180px) {
     .shell { flex-wrap: wrap; }
 
     .side {
@@ -1292,6 +1388,15 @@ input  { font: inherit; color: inherit; }
         border-left: 0;
         border-top: 1px solid var(--edge);
         max-height: 46vh;
+
+        /*
+          ★ order 가 없으면 지도가 사라진다 (2026-08-23).
+
+          DOM 순서가 레일 → 패널 → <b>정류장</b> → 지도 다. 정류장 칸이 flex-basis:100%
+          라 줄바꿈을 하는데, 그 다음 줄에 지도가 같이 얹히면서 정류장이 폭을 다 먹고
+          지도가 0px 이 됐다 — 1024×768 에서 실측. 지도를 앞줄로 보내면 해결된다.
+        */
+        order: 3;
     }
     .side.is-collapsed { flex-basis: auto; max-height: 24px; }
 
@@ -1408,22 +1513,24 @@ input  { font: inherit; color: inherit; }
 }
 .plan-go:hover { background: #d7e3fa; }
 
-/*
-  버스가 근소하게 빠를 때 붙는 단서. 도보만 줄에 다는 이유는, 사용자가 그 줄을 지나쳐
-  아래로 내려가기 전에 읽어야 뜻이 있기 때문이다.
-*/
-.plan-hint {
-    margin-top: 6px; padding-top: 6px;
-    border-top: 1px dashed var(--edge);
-    font-size: 11.5px; line-height: 1.5;
-    color: #7a5b1e;
-}
-
 .plan-note {
     margin-top: 7px;
     font-size: 11.5px; line-height: 1.6; color: var(--ink-soft);
 }
 .plan-note[hidden] { display: none; }
+
+/*
+  버스가 근소하게 빠를 때 붙는 단서.
+
+  '도보만' 줄이 있던 시절에는 그 줄 안에 달려 있었다(.plan-hint). 줄을 없앴으므로
+  목록 아래로 옮겼는데, 다른 안내와 같은 회색으로 두면 그냥 지나친다 —
+  이 문구 하나가 '나갔다가 20분 기다리는 일'을 막는 자리라서 색을 준다.
+*/
+.plan-note.is-warn {
+    margin-top: 8px; padding-top: 7px;
+    border-top: 1px dashed var(--edge);
+    color: #7a5b1e;
+}
 
 /* ── 소요 시간 구간별 ────────────────────────────────────────
    도보 따로, 버스 따로. 한 숫자로 합치면 어디서 시간이 드는지 알 수 없다.
@@ -1561,3 +1668,533 @@ input  { font: inherit; color: inherit; }
     white-space: nowrap;
 }
 .seg-tip-go:hover { background: #d7e3fa; }
+
+/* ── 길 안내 도우미 (챗봇) ───────────────────────────────────
+   Gemini 채팅에서 가져온 것은 색이 아니라 방식이다 —
+   알약형(9999px), 면을 나누지 않기, 본문을 크게, 그림자 최소.
+   색은 시안의 크림·골드를 그대로 쓴다. 구글 색을 가져오면
+   이 화면만 혼자 다른 서비스처럼 보인다.
+   ------------------------------------------------------------ */
+
+/* 꺼져 있을 때 — 지도 위 오른쪽 아래 */
+.chat-fab {
+    position: absolute;
+    right: 20px; bottom: 20px;
+    z-index: 12;                 /* 검색바(.searchbar)와 같은 층 */
+    width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
+    /* 위 검색바와 같은 언어로 맞춘다 — 흰 알약, 같은 테두리, 같은 그림자 */
+    background: #fff;
+    border: 1.5px solid var(--edge);
+    border-radius: 999px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, .10);
+    color: var(--ink);
+    cursor: pointer;
+    transition: transform .15s, background .15s, box-shadow .15s;
+}
+.chat-fab:hover {
+    background: var(--cream-deep);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .14);
+}
+.chat-fab:active { transform: translateY(0); }
+
+/* 열려 있을 때 — FAB 자리에서 그대로 자라난다.
+   누른 자리에서 열려야 어디서 나온 창인지 눈이 따라간다. */
+.chat {
+    position: absolute;
+    right: 20px; bottom: 20px;
+    z-index: 13;                 /* FAB 보다 위 */
+    /*
+      ★ 화면 세로의 절반을 넘게 잡는다(2026-08-21).
+
+      전에는 360×520 고정이었다. 1080 짜리 화면에서는 절반이 안 돼서, 대화가 서너 마디만
+      쌓여도 위가 잘려 '무엇을 잘못 들었는지'가 안 보였다 — 그게 보여야 사용자가
+      다시 말할지 고쳐 칠지 정할 수 있다.
+
+      vh 로 잡되 위아래를 묶는다. clamp 없이 68vh 만 두면 낮은 화면에서 말풍선 두 개
+      높이가 되고, 세로로 긴 화면에서는 지도를 통째로 덮는다.
+    */
+    width: 420px;
+    height: clamp(560px, 68vh, 900px);
+    max-height: calc(100% - 40px);
+    display: flex; flex-direction: column;
+    background: #fff;
+    border: 1.5px solid var(--edge);
+    border-radius: 18px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .16);
+    overflow: hidden;
+    transform-origin: bottom right;
+    animation: chat-pop .16s ease-out;
+}
+/* ★ [hidden] 이 display:flex 를 못 이긴다. .side 에서 이미 한 번 밟은 함정이다. */
+.chat[hidden] { display: none; }
+
+@keyframes chat-pop {
+    from { opacity: 0; transform: scale(.9) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.chat-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 13px 14px 13px 18px;
+    background: var(--cream);
+    border-bottom: 1px solid var(--edge);
+}
+.chat-title { flex: 1 1 auto; font-size: 14px; font-weight: 700; color: var(--ink); }
+.chat-close {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: 999px;
+    color: var(--ink-soft); cursor: pointer;
+}
+.chat-close:hover { background: var(--cream-deep); color: var(--ink); }
+
+/* 대화 — 면을 나누지 않는다. 배경은 흰색 하나고 말풍선만 떠 있다. */
+.chat-log {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 16px 16px 8px;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.chat-msg {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    /* Gemini 가 17px 를 쓰는 이유와 같다 — 읽기 편해야 한다.
+       휠체어 사용자가 밖에서 보는 화면이라 더 그렇다. */
+    font-size: 15px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+}
+.chat-msg.bot  { align-self: flex-start; background: var(--cream-deep); color: var(--ink); border-bottom-left-radius: 5px; }
+.chat-msg.me   { align-self: flex-end;   background: var(--gold);       color: var(--ink); border-bottom-right-radius: 5px; }
+/* 잘못 들었을 때 '무엇을 들었는지'를 흐리게 남긴다 — 사용자가 다시 말할지 고쳐 칠지 정한다. */
+.chat-msg.heard { align-self: flex-end; background: transparent; color: var(--ink-soft);
+                  font-size: 12px; padding: 0 4px; }
+.chat-msg.fail { background: #fdecea; color: #b3261e; align-self: flex-start; border-bottom-left-radius: 5px; }
+
+/* 생각 중 점 세 개 */
+.chat-dots { display: inline-flex; gap: 4px; align-items: center; height: 10px; }
+.chat-dots i {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--ink-soft);
+    animation: chat-blink 1.2s infinite ease-in-out;
+}
+.chat-dots i:nth-child(2) { animation-delay: .18s; }
+.chat-dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes chat-blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.chat-foot {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: center; gap: 9px;
+    padding: 10px 16px 16px;
+    border-top: 1px solid var(--edge);
+}
+.chat-state { font-size: 12px; color: var(--ink-soft); min-height: 16px; text-align: center; }
+
+/* 마이크 — 이 화면에서 제일 큰 것 */
+.chat-mic {
+    position: relative;
+    width: 76px; height: 76px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--gold); color: var(--ink);
+    border: 0; border-radius: 999px;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+}
+.chat-mic:hover  { transform: scale(1.04); }
+.chat-mic:active { transform: scale(.97); }
+
+/* 녹음 중 — 제보 '높음' 과 같은 빨강을 쓴다. 화면들 사이에서 같은 뜻이 같은 색이어야 한다. */
+.chat-mic.rec { background: #d32f2f; color: #fff; animation: chat-pulse 1.4s infinite; }
+@keyframes chat-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(211, 47, 47, .40); }
+    70%  { box-shadow: 0 0 0 14px rgba(211, 47, 47, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
+}
+.chat-mic:disabled { background: var(--cream-deep); color: var(--ink-soft); cursor: default;
+                     transform: none; animation: none; }
+
+/* 10초 자동 종료를 링이 줄어드는 것으로 보여준다.
+   r=35 이므로 둘레는 2πr = 219.9 다. 이 값이 dasharray 와 맞아야 한 바퀴가 정확히 10초다. */
+.chat-ring { position: absolute; inset: 0; transform: rotate(-90deg); pointer-events: none; }
+.chat-ring-fg {
+    fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round;
+    stroke-dasharray: 219.9; stroke-dashoffset: 219.9;
+}
+.chat-mic.rec .chat-ring-fg { animation: chat-count 10s linear forwards; }
+@keyframes chat-count { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 219.9; } }
+
+/* 타이핑 — 마이크보다 작고 조용하다. 보조 수단이라는 게 보여야 한다. */
+.chat-type {
+    width: 100%;
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 4px 4px 15px;
+    background: var(--cream);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+}
+.chat-type input {
+    flex: 1 1 auto; min-width: 0;
+    border: 0; background: transparent; outline: none;
+    font-size: 14px; color: var(--ink);
+}
+.chat-type input::placeholder { color: var(--ink-soft); }
+.chat-send {
+    flex: 0 0 auto;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--gold); color: var(--ink);
+    border: 0; border-radius: 999px; cursor: pointer;
+}
+.chat-send:hover { filter: brightness(.95); }
+
+/* 좁은 화면에서는 지도를 거의 덮는다. 420px 창을 그대로 두면 화면 밖으로 나간다.
+   높이는 위와 같은 식을 쓴다 — 폭이 980 을 지나는 순간 창이 줄어들면 안 된다. */
+@media (max-width: 980px) {
+    .chat {
+        right: 12px; left: 12px; bottom: 12px;
+        width: auto;
+        height: clamp(560px, 72vh, 900px);
+    }
+    .chat-fab { right: 14px; bottom: 14px; }
+}
+
+
+/* ── 장소 등록 창 (집) ──────────────────────────────────────────
+   ★ 크기·색·라운드는 여기 없다. 전부 auth.css 에서 온다 —
+     마크업이 로그인 카드와 같은 클래스(.auth-card.login-card / .login-form-area /
+     .auth-field / .auth-input / .auth-button)를 쓰기 때문이다.
+     값을 여기 베껴 적지 말 것. 로그인 쪽을 고칠 때마다 두 화면이 어긋난다.
+
+   ★ auth.css 는 .login-card 를 세 번 재정의한다. 앞쪽 정의(565px 두 칸 크림 카드)는
+     뒤에서 전부 덮인다. 실제로 그려지는 로그인 화면은 이렇다 (2026-08-21 실측):
+
+         카드     460 × 477 · 흰 배경 · radius 22px
+                  border 1px solid rgba(201,144,148,.55)
+                  shadow 0 18px 44px rgba(74,56,39,.12)
+         폼       padding 42px 44px 34px · 흰 배경 · 한 칸(로고 칸은 display:none)
+         제목     30px · #163f79
+         라벨     13px 700 · #3d342e
+         입력칸   370 × 46 · radius 12px · #fffdf9 · 테두리 #c99094
+         버튼     370 × 48 · radius 12px · #efad72
+
+     파일 앞부분만 보고 맞추면 안 된다. 한 번 그렇게 해서 틀렸다.
+
+   ★ 이 창이 로그인과 다른 점은 하나뿐이다 — 폼 오른쪽에 지도를 붙인다.
+     왼쪽 칸의 폭은 로그인 카드와 같은 460px 로 못박는다.
+   ------------------------------------------------------------ */
+
+.place-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 40;                 /* 레일(30)보다 위. 화면 전체를 덮는다 */
+    display: grid;
+    place-items: center;
+    padding: 20px;
+}
+
+/*
+  ★ display 를 박아뒀으므로 [hidden] 만으로는 안 사라진다.
+    .side · .chat · .io 에서 이미 세 번 밟은 함정이다 —
+    author 스타일시트의 display 가 UA 의 [hidden]{display:none} 을 이긴다.
+*/
+.place-modal[hidden],
+.place-msg[hidden] { display: none; }
+
+/* 배경막. 뒤가 비쳐야 '지도 위에 잠깐 뜬 창'으로 읽힌다. */
+.place-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(42, 39, 36, .38);
+}
+
+/*
+  로그인 카드에 지도 칸을 하나 더 붙인다.
+
+  왼쪽을 460px 로 고정하는 이유: 로그인 카드의 폭이 460px 이다. 1fr 로 두면 지도 폭에 따라
+  입력칸이 같이 늘었다 줄었다 해서 '주소 입력 크기가 로그인과 같다'가 깨진다.
+*/
+.place-card {
+    position: relative;                                  /* 닫기 버튼의 기준 */
+    width: min(100%, 880px);
+    grid-template-columns: 460px 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;                                    /* 지도 모서리를 카드 라운드로 자른다 */
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .22);       /* 창이라 로그인보다 조금 진하게 */
+    animation: place-in .16s ease-out;
+}
+
+@keyframes place-in {
+    from { opacity: 0; transform: scale(.96); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/*
+  ★ auth.css 가 로그인 폼을 flex + order 로 배치한다
+    (.login-form-area form{display:flex} / .auth-field:nth-of-type(n){order:n} / .auth-button{order:5}).
+
+    이 창은 부품 구성이 달라서 그 순서표가 안 맞는다 — order 가 없는 안내줄(.place-msg)이
+    order:0 으로 취급돼 맨 위로 튀어 오르고, [주소 찾기]와 [등록하기]가 둘 다 order:5 라
+    나란히 붙는다. 여기서는 순서표를 끄고 DOM 순서를 그대로 쓴다.
+*/
+.place-card .login-form-area form { display: block; }
+
+/*
+  주소 칸 + [주소 찾기] — 회원가입의 '중복확인' 과 같은 붙임 방식.
+
+  회원가입 실측(2026-08-21): 입력 376 / 버튼 86 (그룹의 18.7%),
+  버튼 #efad72 · 흰 글씨 · 700 · 테두리 #c99094 · 바깥쪽 모서리만 둥글다.
+
+  ★ 버튼에 .auth-button 을 쓰지 않는다. 그 클래스는 width:100% 라 줄을 통째로 먹는다.
+    높이만 로그인 입력칸(46px)에 맞추고 나머지는 회원가입 쪽을 따른다.
+*/
+.place-addr-group { display: flex; }
+
+/* 붙는 쪽 모서리를 편다. .login-card .auth-input 과 같은 무게(0,2,0)라
+   map.css 가 뒤에 실리는 것으로 이긴다. */
+.place-addr-group .auth-input {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.place-find {
+    flex: 0 0 auto;
+    height: 46px;                  /* 로그인 입력칸과 같은 높이 */
+    padding: 0 15px;
+    border: 1px solid #c99094;
+    border-left: 0;                /* 입력칸 테두리와 겹치지 않게 */
+    border-radius: 0 12px 12px 0;
+    background: #efad72;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.place-find:hover  { background: #e69c61; }   /* 회원가입 버튼의 hover 색 그대로 */
+.place-find:focus-visible { outline: 2px solid #1d75d7; outline-offset: 2px; }
+
+/* 실패 사유. 사용자가 고칠 수 있는 것과 아닌 것을 색으로 나눈다. */
+.place-msg {
+    margin: 14px 0 0;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: rgba(198, 40, 40, .10);
+    color: #a12a2a;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-line;
+}
+
+.place-msg.ok {
+    background: rgba(46, 125, 50, .10);
+    color: #2c6b30;
+}
+
+/* ── 오른쪽 칸 — 로그인에 없는 것. 지도를 붙인다 ────────────────
+   ★ 저장되는 값이 주소가 아니라 좌표라서 필요하다. 지오코딩이 엉뚱한 동네를 집었을 때
+     (같은 동 이름이 다른 시에도 있다) 주소 글자만으로는 알 수 없다. */
+
+.place-preview {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid rgba(201, 144, 148, .35);     /* 카드 테두리와 같은 계열 */
+    background: #fff;
+}
+
+/* 지도가 아직 안 붙었을 때도 칸이 안 무너지게 남는 높이를 전부 먹는다. */
+.place-map {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #f6f1e9;
+}
+
+.place-preview-note {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 11px 14px;
+    border-top: 1px solid rgba(201, 144, 148, .25);
+    color: #786552;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.place-close {
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 28px; height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .82);
+    color: #6b635a;
+    cursor: pointer;
+}
+
+.place-close:hover { background: #fff; color: #2a2724; }
+
+/*
+  좁으면 지도를 아래로 내린다. 옆에 두면 왼쪽 460px 를 지킬 수 없어
+  입력칸 폭이 로그인과 달라진다 — 그럴 바에는 세로로 쌓는다.
+*/
+@media (max-width: 900px) {
+    .place-card {
+        width: min(100%, 460px);
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 220px;
+    }
+    .place-preview {
+        grid-column: 1;
+        grid-row: 2;
+        border-left: 0;
+        border-top: 1px solid rgba(201, 144, 148, .35);
+    }
+}
+
+/* ── 손가락으로 누르는 화면 ──────────────────────────────────
+   태블릿 대응 (2026-08-23).
+
+   폭이 아니라 <b>입력 장치</b>로 가른다. pointer:coarse 는 손가락·펜이고,
+   같은 1024px 이라도 마우스 달린 창은 여기에 안 걸린다.
+   폭으로 가르면 창을 줄인 데스크톱까지 버튼이 커진다.
+
+   ★ 이 화면은 휠체어 사용자가 밖에서 한 손으로 쓴다. 흔들리는 버스 안에서
+     11px 짜리 '근처 찾기' 를 정확히 누르라고 할 수 없다.
+     누르는 것은 전부 최소 40px 로 올린다(애플 44 · 구글 48 의 아래쪽을 잡았다 —
+     패널이 좁아 48 로 잡으면 한 줄에 두 개가 안 들어간다).
+
+   ★ 글자 크기는 그대로 둔다. 누르는 면적만 키운다 —
+     화면마다 글자가 달라 보이는 것을 피하려고 폭 기준 축소를 걷어냈던 것과 같은 이유다.
+
+   맨 아래에 두는 이유: 위 규칙들을 이겨야 하는데 특정도를 올리지 않고 순서로 이긴다.
+*/
+@media (pointer: coarse) {
+
+    /* 칸 안의 ✕. 지금은 12px 글자에 여백이 거의 없어 오조작이 잦다. */
+    .field-clear {
+        min-width: 40px; min-height: 40px;
+        padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+
+    /* 집 · 회사 · 자주가는 경로 — 모양은 그대로, 누를 높이만 준다. */
+    .shortcut { min-height: 40px; padding: 8px 2px; }
+
+    /* 정류장 칸의 잔버튼들. 여기가 제일 작았다(11~12px 글자에 3px 여백). */
+    .seg-set,
+    .bus-refresh {
+        min-height: 40px;
+        padding: 8px 12px;
+    }
+
+    /* '저상만' 체크. 상자 자체가 작아서 글자까지 눌리는 면으로 만든다. */
+    .bus-only {
+        display: inline-flex; align-items: center; gap: 6px;
+        min-height: 40px;
+    }
+    .bus-only input { width: 20px; height: 20px; }
+
+    /* 자동완성 한 줄. 목록이라 44 까지 올리면 한 화면에 두세 개밖에 안 보인다. */
+    .suggest button { padding: 12px 18px; }
+
+    /* '이 경로로'. 카드 안에 있어 작아도 된다고 뒀는데, 이게 마지막 확정 버튼이다. */
+    .plan-go { min-height: 40px; padding: 8px 14px; }
+
+    /* 결과 더 보기 · 근처 정류장 찾기 — 이미 크지만 높이를 못 박아 둔다. */
+    .more,
+    .bus-find { min-height: 44px; }
+
+    /*
+      정류장 칸 손잡이. 24px 은 마우스 커서 기준이다.
+      세로로 쌓인 상태(가로 96×24)에서는 높이를, 옆에 선 상태에서는 폭을 키운다.
+    */
+    .side-handle { width: 32px; }
+    .side.is-collapsed { flex-basis: 32px; }
+    .side-handle { right: -32px; }
+
+    /*
+      ★ 손가락에는 hover 가 없다. 눌렀을 때 색이 남아 '켜져 있는 것'처럼 보이는 것을 막는다.
+        대신 누르는 순간(:active)에 반응을 준다 — 눌렸는지 모르면 두 번 누른다.
+    */
+    .rail-tab:hover,
+    .shortcut:hover,
+    .mini:hover,
+    .swap:hover,
+    .more:hover,
+    .bus-find:hover,
+    .bus-refresh:hover,
+    .seg-set:hover { background: inherit; }
+
+    .rail-tab:active,
+    .shortcut:active,
+    .mini:active,
+    .swap:active,
+    .more:active,
+    .bus-find:active,
+    .bus-refresh:active,
+    .seg-set:active { background: var(--cream-deep); }
+}
+
+/* 세로로 쌓인 정류장 칸의 손잡이는 아래로 나오므로 폭이 아니라 높이를 키운다. */
+@media (pointer: coarse) and (max-width: 1180px) {
+    .side-handle {
+        right: auto;
+        width: 120px; height: 32px;
+        bottom: -32px;
+    }
+    .side.is-collapsed { flex-basis: auto; max-height: 32px; }
+}
+
+/* ────────────────────────────────────────────────────────────
+   제보 패널 (2026-08-24 신설) — ★ 임시 디자인이다.
+   /report.html 에서 동작을 옮겨오면서 최소한만 입혔다. 모양은 뒤에 손본다.
+   기존 토큰(--ink 등)을 쓰고 새 색을 만들지 않는다 — 임시라도 다른 화면과
+   따로 놀면 '이건 왜 다르지' 를 설명해야 한다.
+   ──────────────────────────────────────────────────────────── */
+.rp2-pos { margin-bottom: 10px; padding: 7px 9px; border-radius: 6px;
+           background: #f4f1ec; color: #6b6155; font-size: 12px; }
+.rp2-pos.on { background: #fff4e6; color: #8a5a20; font-weight: 700; }
+
+.rp2-label { margin: 10px 0 4px; color: #555; font-size: 12px; font-weight: 700; }
+
+.rp2-sev { display: flex; gap: 5px; }
+.rp2-sev label { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+                 padding: 6px 2px; border: 1px solid #e0d8cd; border-radius: 8px;
+                 font-size: 11px; cursor: pointer; }
+.rp2-sev label:has(input:checked) { border-color: #efad72; background: #fff6ec; font-weight: 700; }
+
+.rp2-hint { margin-top: 5px; color: #888; font-size: 11px; line-height: 1.5; }
+
+.rp2-input { width: 100%; box-sizing: border-box; padding: 7px 9px;
+             border: 1px solid #e0d8cd; border-radius: 8px; background: #fffdf9;
+             font-family: inherit; font-size: 13px; }
+textarea.rp2-input { resize: vertical; }
+
+.rp2-btns { display: flex; gap: 6px; margin-top: 12px; }
+.rp2-btns button { flex: 1; height: 38px; border-radius: 10px; border: 1px solid #c99094;
+                   font-size: 13px; font-weight: 700; cursor: pointer; }
+.rp2-save  { background: #efad72; color: #fff; }
+.rp2-save:disabled { background: #e6ded4; border-color: #ddd3c7; color: #a79c8f; cursor: default; }
+.rp2-clear { background: #fff; color: #6b6155; }
+
+.rp2-msg { margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; }
+.rp2-msg[hidden] { display: none; }
+/*
+  찍은 자리를 나타내는 점. 라벨 핀(placePin)은 yAnchor 1.6 이라 실제 좌표보다 위에 떠 있어서
+  '어디가 찍힌 자리인지' 가 안 보인다. 이 점은 좌표에 정확히 얹는다.
+*/
+.rp2-dot {
+    width: 14px; height: 14px; margin: -7px 0 0 -7px;   /* 가운데를 좌표에 맞춘다 */
+    border-radius: 50%; background: #d32f2f; border: 2.5px solid #fff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+}
+
+.rp2-msg.ok   { background: #e8f5e9; color: #1b5e20; }
+.rp2-msg.fail { background: #ffebee; color: #b71c1c; }

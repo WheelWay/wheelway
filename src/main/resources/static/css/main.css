@@ -280,6 +280,35 @@ body.main-body {
     cursor: pointer;
 }
 
+/*
+  아이디 찾기 결과 패널. 예전에는 /user/searchUserIdResult 한 장으로 넘어갔는데
+  이제 모달 안에서 보여준다.
+*/
+.modal-result-message {
+    margin: 0;
+    color: #3d342e;
+    font-size: 15px;
+    line-height: 1.8;
+    text-align: center;
+}
+
+.modal-result-message strong { color: #163f79; font-size: 19px; font-weight: 700; }
+
+/* 못 찾았을 때·재설정에 실패했을 때. 같은 자리에 정반대 뜻이 들어오므로 색으로 갈라준다. */
+.modal-result-message.is-fail { color: #b03a3a; }
+
+/*
+  결과 패널의 [로그인] 은 <button> 이 아니라 <a> 다.
+  .modal-login-submit 이 버튼 기준이라 이 셋이 빠진다 - 밑줄이 남고, 글자가 왼쪽에 붙고,
+  padding 이 width 100% 를 밀어낸다.
+*/
+a.modal-login-submit {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    text-decoration: none;
+}
+
 .login-modal-brand {
     min-width: 0;
     display: grid;

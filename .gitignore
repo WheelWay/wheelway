@@ -53,3 +53,10 @@ cp.txt
 # textfile/  data/ 의 구버전 사본이다.
 data/
 textfile/
+
+### whisper.cpp ###
+# 실행 파일 + 모델 259MB. git 에 올릴 수 없다 — credentials 와 같은 취급이다.
+# 받는 곳: github.com/ggml-org/whisper.cpp  Releases > whisper-bin-x64.zip
+# 모델   : ggml-small-q5_1.bin (한국어 지명은 base 로는 깨진다)
+# ★ whisper-server 는 기본 포트가 8080 이라 스프링과 겹친다. --port 8090 으로 띄울 것
+whisper-bin-x64/

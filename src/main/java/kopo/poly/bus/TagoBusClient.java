@@ -44,6 +44,36 @@ public class TagoBusClient implements IBusClient {
 
     private static final String BASE = "http://apis.data.go.kr/1613000";
 
+    /**
+     * <b>오래 쓰는 값</b>을 받을 때 몇 번까지 다시 시도할지.
+     *
+     * <h3>왜 필요한가</h3>
+     * TAGO 는 멀쩡한 요청에도 무작위로 실패한다. 두 얼굴이 있다.
+     * <pre>
+     *   HTTP_ERROR / 04     게이트웨이 일반 오류
+     *   99 (30/30)          "가용한 세션이 존재하지 않습니다"
+     * </pre>
+     *
+     * <p><b>우리가 너무 자주 불러서가 아니다.</b> 2026-08-24 에 앱을 끄고 재봤다 —
+     * <b>간격 없이 연속 45번을 쏴도 한 번도 안 막혔고</b>, 3초·6초 간격에서는 각각 19/20 이었다.
+     * 열려 있던 연결도 1개뿐이었다. 즉 실패는 우리 호출 속도와 무관하고,
+     * 그 API 를 쓰는 <b>전체가 공유하는</b> 무언가에 걸린다. 시간대에 따라 심해진다
+     * (같은 날 아침 28% → 오전 5%).
+     *
+     * <p>그러니 <b>대응은 재시도뿐이다.</b> 실패가 무작위 5% 라면 네 번 시도로 0.001% 가 된다.
+     *
+     * <h3>어디에 쓰고 어디에 안 쓰나</h3>
+     * <pre>
+     *   쓴다     정류장 목록 · 경유 정류장 · 노선 목록
+     *            — 하루~여섯 시간에 한 번 받고 그 결과로 그 시간을 산다.
+     *              한 번 빠지면 그동안 '없는 정류장'·'없는 노선'이 된다
+     *   안 쓴다  도착정보
+     *            — '지금 몇 분 뒤'라 늦으면 값 자체가 틀리고,
+     *              실패해도 다음 갱신(45초)에서 곧 다시 받는다
+     * </pre>
+     */
+    private static final int BULK_TRIES = 4;
+
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     /** 도착정보는 '지금 몇 분 뒤'라 늦게 오면 값 자체가 틀린다. 길게 잡지 않는다. */
@@ -191,12 +221,18 @@ public class TagoBusClient implements IBusClient {
     @Override
     public List<kopo.poly.dto.RouteStopDTO> routeStops(String routeId) {
 
+        /*
+          ★ 다시 시도한다. 저상 정류장 표가 이 호출 118번으로 만들어지는데,
+          한 번씩 튕길 때마다 그 노선이 통째로 빠진다 — 그 노선만 다니는 정류장은
+          '저상이 안 서는 곳'이 되고, 복합 경로가 그만큼 답을 못 낸다.
+          실제로 2026-08-24 아침에 표가 며칠째 미완성이던 원인이 이것이었다.
+        */
         // 여기는 routeId(대문자 I)다. 오퍼레이션마다 파라미터 이름이 달라서 매번 확인해야 한다.
-        JsonNode body = call("/BusRouteInfoInqireService/getRouteAcctoThrghSttnList"
+        JsonNode body = callRetry("/BusRouteInfoInqireService/getRouteAcctoThrghSttnList"
                 + "?serviceKey=" + encodedKey
                 + "&cityCode=" + cityCode
                 + "&routeId=" + enc(routeId)
-                + "&numOfRows=500&pageNo=1&_type=json");
+                + "&numOfRows=500&pageNo=1&_type=json", BULK_TRIES);
 
         List<kopo.poly.dto.RouteStopDTO> out = new ArrayList<>();
         for (JsonNode it : items(body)) {
@@ -229,11 +265,37 @@ public class TagoBusClient implements IBusClient {
           지역을 갈아타면 더 많을 수 있어 끝까지 도는 구조로 둔다.
           쪽수 상한을 두는 이유: totalCount 가 이상하게 오면 무한히 돌 수 있다.
         */
+        Integer expected = null;
+
         for (int page = 1; page <= 20; page++) {
-            JsonNode body = call("/BusSttnInfoInqireService/getSttnNoList"
-                    + "?serviceKey=" + encodedKey
-                    + "&cityCode=" + cityCode
-                    + "&numOfRows=1000&pageNo=" + page + "&_type=json");
+            /*
+              ★ 쪽마다 다시 시도한다.
+
+              TAGO 는 멀쩡한 요청에도 이따금 HTTP_ERROR/04 를 낸다 — 쪽 번호나 개수와
+              무관하게 무작위다(2026-08-22 실측: 같은 요청이 6번 중 2번 실패, 재시도하면 성공).
+
+              전에는 한 쪽이 실패하면 그 자리에서 멈추고 <b>거기까지 받은 것을 정상인 양
+              돌려줬다.</b> 청주는 세 쪽이라 첫 쪽만 받고 끝나는 일이 잦았고, 그러면
+              1,000곳만 아는 채로 하루를 돈다 — 지도에서 나머지 1,709곳이 사라진다.
+              증상이 '정류장이 안 찍힌다' 라서 원인을 찾기 어렵다.
+            */
+            JsonNode body;
+            try {
+                body = callRetry("/BusSttnInfoInqireService/getSttnNoList"
+                        + "?serviceKey=" + encodedKey
+                        + "&cityCode=" + cityCode
+                        + "&numOfRows=1000&pageNo=" + page + "&_type=json", BULK_TRIES);
+            } catch (BusUnavailableException e) {
+                /*
+                  끝까지 실패하면 <b>부분 목록을 돌려주지 않고 던진다.</b>
+                  부르는 쪽(BusService)이 빈 결과만 안 담고 부분 결과는 담아 버려서,
+                  한 번 모자라게 받으면 그대로 굳는다. 아예 안 받은 것으로 두면
+                  다음 요청이 다시 받는다.
+                */
+                log.warn("정류장 목록 {}쪽을 {}번 시도했지만 못 받았습니다. 이번 적재는 버립니다.",
+                        page, BULK_TRIES);
+                throw e;
+            }
 
             List<JsonNode> items = items(body);
             for (JsonNode it : items) {
@@ -248,9 +310,26 @@ public class TagoBusClient implements IBusClient {
             }
 
             Integer total = intOf(body, "totalCount");
+            if (total != null) {
+                expected = total;
+            }
             if (items.isEmpty() || total == null || out.size() >= total) {
                 break;
             }
+        }
+
+        /*
+          ★ 다 못 받았으면 받은 것도 쓰지 않는다.
+
+          모자란 목록은 '없는 정류장' 을 만든다. 빈 목록이면 부르는 쪽이 안 담고 다시
+          받지만(BusService.allStopsCached), 1,000곳짜리 부분 목록은 <b>정상으로 보여서
+          그대로 캐시되고 하루를 간다.</b> 조용히 틀린 답보다 오류가 낫다.
+        */
+        if (expected != null && out.size() < expected) {
+            log.warn("정류장 목록이 모자랍니다 · {}곳 / 전체 {}곳 (cityCode={}). 이번 적재는 버립니다.",
+                    out.size(), expected, cityCode);
+            throw new BusUnavailableException(
+                    "정류장 목록을 다 받지 못했습니다 (" + out.size() + "/" + expected + ").");
         }
 
         log.info("TAGO 정류장 목록 {}곳 (cityCode={})", out.size(), cityCode);
@@ -263,10 +342,11 @@ public class TagoBusClient implements IBusClient {
     public java.util.Map<String, BusRouteDTO> allRoutes() {
 
         // numOfRows 를 크게 잡아 한 번에 받는다. 보은은 85개라 한 쪽이면 끝난다.
-        JsonNode body = call("/BusRouteInfoInqireService/getRouteNoList"
+        // ★ 여기가 실패하면 저상 표 만들기가 시작조차 못 한다. 다시 시도한다.
+        JsonNode body = callRetry("/BusRouteInfoInqireService/getRouteNoList"
                 + "?serviceKey=" + encodedKey
                 + "&cityCode=" + cityCode
-                + "&numOfRows=1000&pageNo=1&_type=json");
+                + "&numOfRows=1000&pageNo=1&_type=json", BULK_TRIES);
 
         java.util.Map<String, BusRouteDTO> out = new java.util.LinkedHashMap<>();
         for (JsonNode it : items(body)) {
@@ -351,7 +431,35 @@ public class TagoBusClient implements IBusClient {
             throw new BusUnavailableException("버스 정보 서버가 오류를 돌려줬습니다. 서비스키·호출량을 확인하세요.");
         }
 
-        JsonNode root = MAPPER.readTree(raw).path("response");
+        JsonNode parsed = MAPPER.readTree(raw);
+
+        /*
+          ★ 오류인데 JSON 으로 오는 형태가 하나 더 있다.
+
+            {"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"HTTP_ERROR","returnReasonCode":"04"}}}
+
+          게이트웨이가 앞단에서 내는 봉투인데 <b>중괄호로 시작해서</b> 위의 'JSON 이 아님'
+          가드를 그냥 통과한다. 그리고 response.header.resultCode 가 아예 없으니
+          아래 코드 검사도 통과해서, 결국 <b>빈 body 가 정상 응답처럼 흘러나갔다.</b>
+
+          그 결과가 '데이터 없음' 이다 — 정류장 목록을 받다가 이걸 만나면 그 쪽이 통째로
+          비고, 화면은 '그 동네에는 정류장이 없다' 고 조용히 거짓말한다.
+          실제로 그렇게 됐다(2026-08-22 · 청주 2,709곳 중 1,000곳만 올라왔다).
+
+          못 부른 것과 '없는 것'은 다르다는 이 클래스의 약속을 여기서도 지킨다.
+        */
+        JsonNode err = parsed.path("OpenAPI_ServiceResponse").path("cmmMsgHeader");
+        if (!err.isMissingNode()) {
+            String em = text(err, "errMsg");
+            String rc = text(err, "returnReasonCode");
+            throw new BusUnavailableException(
+                    "버스 정보 서버가 오류를 돌려줬습니다 (" + em + " " + rc + ").");
+        }
+
+        JsonNode root = parsed.path("response");
+        if (root.isMissingNode()) {
+            throw new BusUnavailableException("버스 정보 서버가 알 수 없는 형식으로 답했습니다.");
+        }
         String code = text(root.path("header"), "resultCode");
         if (code != null && !"00".equals(code)) {
             String msg = text(root.path("header"), "resultMsg");
@@ -389,6 +497,38 @@ public class TagoBusClient implements IBusClient {
         }
         String s = v.asString();
         return (s == null || s.isBlank()) ? null : s.trim();
+    }
+
+    /**
+     * 실패하면 다시 부른다. {@link #BULK_TRIES} 참고 — <b>오래 쓰는 값에만</b> 쓴다.
+     *
+     * <p>마지막 예외를 그대로 올린다. 부르는 쪽이 '몇 번 해봤는데도 안 됐다'를 알고
+     * 그 다음을 정해야 한다 — 정류장 목록은 통째로 버리고, 경유 정류장은 그 노선만 건너뛴다.
+     */
+    private JsonNode callRetry(String pathAndQuery, int tries) {
+        BusUnavailableException last = null;
+
+        for (int t = 1; t <= tries; t++) {
+            try {
+                return call(pathAndQuery);
+            } catch (BusUnavailableException e) {
+                last = e;
+                if (t < tries) {
+                    // 조금씩 늘려 쉰다. 상대가 밀릴 때 같은 박자로 두드리면 같이 밀린다.
+                    sleepQuietly(300L * t);
+                }
+            }
+        }
+        throw last;
+    }
+
+    /** 다시 부르기 전 잠깐 쉰다. 몰아치면 오히려 오류가 는다. */
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static Integer intOf(JsonNode node, String field) {

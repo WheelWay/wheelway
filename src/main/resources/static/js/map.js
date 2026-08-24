@@ -31,6 +31,26 @@
 */
 const CENTER_FALLBACK = [37.5663, 126.9779];   // 서울시청
 
+/**
+ * 지도를 열 때의 배율. <b>숫자가 작을수록 확대</b>다.
+ *
+ * <pre>
+ *   level 3    802 × 714 m   ← 여기. 골목·가게 이름이 보인다
+ *   level 4   1.6 × 1.4 km
+ *   level 5   3.2 × 2.9 km   예전 값. 시 전체가 들어와 '내 동네'가 안 잡혔다
+ * </pre>
+ *
+ * <p><b>버스 탭도 같은 지도를 쓴다.</b> {@code BUS_MK_MAX_LEVEL}(5) 안쪽이라
+ * 정류장 마커는 그대로 그려진다. 다만 화면이 좁은 만큼 <b>보이는 정류장이 적다</b> —
+ * 실측(보은읍)으로 level 3 은 6곳, level 4 는 13곳이었다. 더 넓게 보려면 지도를
+ * 축소하면 되고, [이 근처 정류장 찾기] 로 받은 것은 배율과 무관하게 남는다.
+ *
+ * <p>검색해서 한 곳을 고르면 level 4 로 맞춘다(runSearch·focusPlace). 시작 배율이
+ * 그보다 안쪽이라 <b>고르고 나면 한 단계 물러나 보인다</b> — 고른 곳과 주변을 같이
+ * 보여주려는 자리라 일부러 그대로 둔다.
+ */
+const INITIAL_LEVEL = 3;
+
 function initialCenter() {
     if (!serviceBounds) {
         return CENTER_FALLBACK;
@@ -57,6 +77,24 @@ let speedInfo = { personalized: false, recordCount: 0, minRecords: 3 };
  * 흐름을 피할 수 있다.
  */
 let loginId = '';
+
+/**
+ * 찍어둔 제보 위치. 없으면 {@code null}.
+ *
+ * <p>★ 제보 관련 선언이 여기 올라와 있는 이유: 이 파일은 <b>중간에서 top-level 배선 코드</b>가
+ * 돈다(wireReport 호출). 선언을 쓰는 자리 근처에 두면 그 배선보다 뒤라 TDZ 에 걸린다 —
+ * 함수는 끌어올려지지만 {@code const}·{@code let} 은 안 된다.
+ */
+let rpPos = null;
+let rpMarker = null;
+let rpDot = null;
+
+/** 심각도별로 '이게 무엇을 뜻하는지'. 고를 때마다 아래에 띄운다. */
+const RP_SEV_HINT = {
+    '높음': '지나갈 수 없는 곳입니다. 경로에서 바로 빠집니다.',
+    '보통': '지나갈 수는 있지만 조심해야 하는 곳입니다.',
+    '낮음': '알아두면 좋은 정보입니다. 경로는 바뀌지 않습니다.'
+};
 
 /** 진행 중인 이동. [출발] 을 누른 뒤 브라우저를 닫아도 이어지도록 여기에 둔다. */
 const TRACK_KEY = 'wheelway.tracking';
@@ -124,7 +162,7 @@ function initMap() {
     const c = initialCenter();
     map = new kakao.maps.Map($('map'), {
         center: new kakao.maps.LatLng(c[0], c[1]),
-        level: 5
+        level: INITIAL_LEVEL
     });
 
     places = new kakao.maps.services.Places();
@@ -155,7 +193,18 @@ function initMap() {
       좌표를 직접 집는 일은 수정 화면(admin.html)의 몫이고,
       사용자는 장소 이름으로만 정한다. 지도 클릭이 살아 있으면
       지도를 옮기려다 잘못 눌러 출발지가 바뀌는 일이 생긴다.
+
+      ★ 예외는 제보 탭 하나다. 거기서는 '이 자리' 를 찍는 것이 그 탭이 하는 일 전부라
+      클릭 말고 정할 길이 없다. 다른 탭에서는 아래 검사에 걸려 아무 일도 안 한다 —
+      위 규칙은 그대로 지켜진다.
     */
+    kakao.maps.event.addListener(map, 'click', (e) => {
+        if (activeTab === 'report') {
+            rpSetPos(e.latLng);
+            rpMsg('');
+        }
+    });
+
 
     setStatus('출발지와 도착지를 검색해 정하세요.');
     renderRecent();
@@ -179,11 +228,11 @@ function initMap() {
       여기서 한 번은 반드시 불러야 패널 표시가 탭 상태와 어긋나지 않는다.
     */
     const want = new URLSearchParams(location.search).get('tab');
-    selectTab(['map', 'bus', 'taxi'].includes(want) ? want : 'map');
+    selectTab(['map', 'bus', 'taxi', 'report'].includes(want) ? want : 'map');
 
-    // 사용자 동네로 지도를 옮긴다. 늦게 와도 되는 일이라 기다리지 않는다 —
-    // 위치를 못 받아도 화면은 시청에 떠 있으면 그만이다.
-    moveToMyArea();
+    // 지도를 사용자 동네로 옮긴다. 늦게 와도 되는 일이라 기다리지 않는다 —
+    // 아무것도 못 받아도 화면은 안내 지역 한가운데에 떠 있으면 그만이다.
+    centerOnStart();
 }
 
 /* ── 공사구간 ─────────────────────────────────────────────
@@ -829,33 +878,45 @@ function showRoute(res) {
     renderPanes();
 
     setStatus('경로를 찾았습니다.', 'ok');
-    pushRecent(meters, Math.max(1, Math.ceil(meters / WALK_M_PER_MIN)));
+    // 도보 기준으로 남긴다. 최근경로는 '이 목적지까지 얼마' 라는 기록이고,
+    // 개인 배수는 버스가 얽힌 자리에서만 쓴다(renderRouteTime 참고).
+    pushRecent(meters, baseMinutes(meters));
 }
 
 /** 도보 기준 시간(분). 4km/h 고정값으로, 누구에게나 같은 값이다. */
 const baseMinutes = (meters) => Math.max(1, Math.ceil(meters / 66.7));
 
 /**
- * 경로 시간. <b>도보 기준과 그 사람 기준을 같이 보여준다.</b>
+ * 경로 시간. <b>도보 기준으로 안내한다.</b>
  *
- * <p>조용히 개인 값으로 바꿔치기하지 않는 이유: 같은 1.2km 인데 어제 18분이던 것이
- * 오늘 27분이 되면 사용자는 앱이 고장 났다고 본다. 나란히 두면 "내가 도보보다 1.5배구나"를
- * 스스로 알게 되고, 값이 이상할 때 눈치챌 수 있다.
+ * <h3>★ 개인 실측 배수를 headline 에 쓰지 않는다 (2026-08-21 변경)</h3>
+ * 전에는 그 사람의 실측 속도로 낸 분을 크게 띄우고 도보 기준을 아래에 적었다.
+ * 그런데 그 배수는 <b>집에서 정류장까지</b> 를 재서 얻은 값이다 — 스톱워치가 재는 구간이고
+ * WALK_RECORDS 를 STOP_NAME 으로 묶는 이유도 그것이다.
+ *
+ * <p>그 값이 필요한 이유는 <b>버스를 놓치지 않으려고</b>다. 놓치면 다음 차까지 기다리니
+ * 느린 쪽으로 잡는 것이 안전하다. 반면 목적지까지 그냥 걸어가는 안내에는 놓칠 차가 없다 —
+ * 배수를 곱하면 갈 만한 거리가 못 갈 거리처럼 보이기만 한다.
+ *
+ * <p>그래서 배수가 붙는 자리는 <b>버스가 얽힌 곳뿐</b>이다
+ * (minutesToStop · 복합 경로의 도보 구간 walkMinutes). 여기는 아니다.
+ *
+ * <p>배수 자체는 아래 줄에 그대로 남긴다. 값이 사라지면 사용자는 자기가 잰 기록이
+ * 어디에 쓰이는지 알 수 없게 된다.
  *
  * <p><b>올림한다.</b> 8.2분을 8분으로 알려주면 매번 조금씩 늦는다.
+ * 서버의 챗봇도 같은 자를 쓴다(ChatService.minutesFor).
  */
 function renderRouteTime() {
     if (lastMeters <= 0) {
         return;
     }
     const base = baseMinutes(lastMeters);
-    const mine = Math.max(1, Math.ceil(lastMeters / WALK_M_PER_MIN));
     const ratio = speedInfo.walkRatio;
 
-    $('r-time').textContent = `${mine}분`;
+    $('r-time').textContent = `${base}분`;
 
-    // 배수를 아직 모르면(기록 부족) 서버가 66.7 을 그대로 주므로 두 값이 같다.
-    if (ratio == null || mine === base) {
+    if (ratio == null) {
         $('r-note').textContent = '계단과 공사 구간을 피한 경로입니다.';
         return;
     }
@@ -863,14 +924,15 @@ function renderRouteTime() {
     /*
       ★ 더 빠른 경우도 있다. 전동휠체어는 4km/h 를 넘는다 —
       '항상 느리다' 고 가정하면 그 사용자에게는 매번 틀린 말을 하게 된다.
+      그래서 '더/덜' 을 값으로 판단해서 쓴다.
     */
-    const diff = mine - base;
     const spread = (speedInfo.ratioLow != null && speedInfo.ratioHigh != null)
         ? ` (${speedInfo.ratioLow}~${speedInfo.ratioHigh})` : '';
+    const pace = ratio > 1 ? '느립니다' : (ratio < 1 ? '빠릅니다' : '같습니다');
 
     $('r-note').innerHTML = '계단과 공사 구간을 피한 경로입니다.<br>'
-        + `도보 기준 ${base}분 · <b>${diff > 0 ? `${diff}분 더` : `${-diff}분 덜`} 걸립니다</b>`
-        + ` — 잰 기록 ${speedInfo.ratioCount}건 기준 도보의 ${ratio}배${spread}`;
+        + `잰 기록 ${speedInfo.ratioCount}건 기준 도보의 <b>${ratio}배</b>${spread}로 ${pace}`
+        + ' — 정류장까지 나갈 시각에는 이 값이 반영됩니다.';
 }
 
 /* ── 이동수단 탭 ───────────────────────────────────────────
@@ -881,11 +943,32 @@ function renderRouteTime() {
 
 let activeTab = 'map';
 
+/**
+ * 목적지까지의 <b>도보 선</b>을 지금 탭에 맞춰 보이거나 감춘다.
+ *
+ * <p><b>왜 버스 탭에서 감추나</b>: 지도에 파란 선이 둘 그려졌다. 하나는 이 선
+ * ({@code routeLine} — 처음부터 끝까지 걷는 길)이고, 다른 하나는 복합 경로의
+ * 도보 구간(집→정류장, 정류장→목적지)이다. 둘이 나란히 달리니 <b>어느 것이
+ * 지금 안내인지 알 수 없다.</b>
+ *
+ * <p>버스 탭에서 답해야 할 것은 '버스로 어떻게 가나'이고, 그 답은 복합 경로 선이다.
+ * 도보만 가는 안은 '가는 방법' 목록에 글로 들어 있으니 선까지 겹쳐 그릴 이유가 없다.
+ *
+ * <p><b>선을 지우지 않고 숨기기만 한다.</b> 지도 탭으로 돌아가면 그대로 다시 보여야 하고,
+ * 다시 그리려면 경로를 또 받아와야 한다 — 그건 이 화면이 이미 갖고 있는 값이다.
+ */
+function syncRouteLine() {
+    if (!routeLine) {
+        return;
+    }
+    routeLine.setMap(activeTab === 'bus' ? null : map);
+}
+
 function selectTab(name) {
     activeTab = name;
 
     document.querySelectorAll('.rail-tab[data-tab]').forEach(t => {
-        if (['map', 'bus', 'taxi'].includes(t.dataset.tab)) {
+        if (['map', 'bus', 'taxi', 'report'].includes(t.dataset.tab)) {
             t.classList.toggle('is-active', t.dataset.tab === name);
         }
     });
@@ -903,6 +986,7 @@ function renderPanes() {
     const hasRoute = lastMeters > 0;
     const bus = activeTab === 'bus';
     const taxi = activeTab === 'taxi';
+    const report = activeTab === 'report';
 
     /*
       ★ 택시 탭은 출발·도착 칸을 통째로 감춘다.
@@ -914,8 +998,13 @@ function renderPanes() {
       상태 줄('출발지와 도착지를 검색해 정하세요')도 같이 감춘다. 칸이 없는데 그 안내만
       남으면 어디를 검색하라는 말인지 알 수 없다.
     */
-    $('io').hidden     = taxi;
-    $('status').hidden = taxi;
+    /*
+      제보 탭도 출발·도착 칸을 감춘다. 택시와 같은 이유다 — 이 탭이 하는 일은
+      '지금 보고 있는 자리' 를 올리는 것이라 어디에서 어디로와 무관하다.
+      남겨두면 그것부터 채워야 하는 줄 알고 검색하다 아무 일도 안 일어나는 것을 본다.
+    */
+    $('io').hidden     = taxi || report;
+    $('status').hidden = taxi || report;
 
     /*
       ★ 도착지 칸은 어느 탭에서나 '도착지' 하나의 뜻이다.
@@ -939,14 +1028,26 @@ function renderPanes() {
     $('side').hidden = !bus;
 
     /*
-      경로 요약과 최근경로는 이제 <b>버스 탭에서도 보인다</b>.
-      도착지 칸이 두 탭에서 같은 뜻이 됐으니 결과도 같이 따라와야 한다 —
-      버스 탭에서 목적지를 정했는데 경로가 안 보이면 어디로 가는 중인지 알 수 없다.
+      ★ 경로 요약(도보 몇 분·몇 km)은 <b>버스 탭에서 감춘다</b> (2026-08-24).
+
+      전에는 '목적지를 정했는데 경로가 안 보이면 어디로 가는 중인지 알 수 없다'는 이유로
+      버스 탭에도 띄웠다. 그런데 복합 경로가 들어오면서 같은 화면에 숫자가 둘이 됐다 —
+      위에는 '844번 저상버스를 탑니다', 아래에는 <b>'50분 3.3km'</b>.
+
+      그 50분은 <b>처음부터 끝까지 걷는</b> 시간인데, 버스를 안내하는 자리에 나란히 서면
+      버스로 가는 시간처럼 읽힌다. 도보만 안은 '가는 방법' 목록 안에 이미 들어 있고
+      거기서는 버스 안들과 나란히 비교된다 — 그게 제자리다.
+
+      최근경로는 그대로 둔다. 그건 '어디를 다녀왔나'라 탭과 상관이 없다.
     */
-    $('pane-route').hidden  = !hasRoute;
-    $('pane-recent').hidden = taxi;
+    $('pane-route').hidden  = !hasRoute || bus || report;
+    $('pane-recent').hidden = taxi || report;
     $('pane-bus').hidden    = !bus;
+    $('pane-report').hidden = !report;
     $('pane-taxi').hidden   = !(activeTab === 'taxi');
+
+    // 목적지까지의 도보 선도 같은 이유로 버스 탭에서는 감춘다. syncRouteLine 참고.
+    syncRouteLine();
 
     // 버스 탭은 경로와 무관하게 돈다 — 스톱워치가 재는 것은 집에서 정류장까지 한 구간이라
     // 출발·도착을 검색하지 않아도 쓸 수 있어야 한다.
@@ -1541,7 +1642,7 @@ function renderSpeedNote() {
  * @param pair {@code '은'}(→은/는) · {@code '이'}(→이/가) · {@code '을'}(→을/를)
  */
 function josa(word, pair) {
-    const map = { '은': '는', '이': '가', '을': '를', '과': '와' };
+    const map = { '은': '는', '이': '가', '을': '를', '과': '와', '으로': '로' };
     if (!word) return '';
 
     const last = word.charCodeAt(word.length - 1);
@@ -1836,10 +1937,19 @@ async function loadPlan() {
 
     renderPlan();
 
-    // 제일 나은 안을 지도에 그려 둔다. 정류장은 건드리지 않는다 —
-    // 스톱워치와 도착판이 사용자가 고른 정류장에서 조용히 옮겨가면 안 된다.
+    /*
+      제일 나은 안을 지도에 그리고, 탈 정류장도 그 안의 것으로 채운다.
+
+      ★ 전에는 정류장을 아예 안 건드렸다. '사용자가 고른 정류장에서 조용히 옮겨가면
+      안 된다'는 이유였는데, 그 걱정은 <b>이미 고른 사람</b>에게만 해당한다.
+      아무것도 안 고른 사람에게는 '정류장을 고르세요' 한 칸이 남아, 길찾기가 방금
+      '사창사거리에서 40-2번' 이라고 답해 놓고도 그 정류장을 손으로 다시 찾게 했다.
+
+      이제 아직 안 골랐을 때만 채운다. 고른 사람의 정류장은 그대로 둔다 — busStopAuto 참고.
+    */
     if (plan && (plan.plans || []).length) {
         drawPlan(0);
+        autoPickFromPlan();
     }
 
     // 구간별 시간이 이 안과 겹치므로 자리를 다시 잡는다.
@@ -1853,6 +1963,7 @@ function renderPlan(loading) {
 
     list.innerHTML = '';
     note.hidden = true;
+    note.classList.remove('is-warn');   // 지난번 경고가 다음 결과에 묻어가지 않게
 
     if (!planReady()) {
         box.hidden = true;
@@ -1872,10 +1983,6 @@ function renderPlan(loading) {
     }
 
     /*
-      ★ 도보만이 늘 맨 위다. 총 시간으로 줄을 세우면 버스가 언제나 이기는 것처럼 보인다 —
-      버스 쪽 숫자에는 기다리는 시간이 빠져 있기 때문이다.
-    */
-    /*
       ★ 화면에 적힌 숫자 순서대로 세운다.
 
       서버가 준 순서는 '타고 가는 시간' 기준인데, 화면에 적히는 숫자에는 기다리는 시간이
@@ -1885,57 +1992,53 @@ function renderPlan(loading) {
     const rows = (plan.plans || []).map((p, i) => ({ p, i, t: planTotal(p) }));
     rows.sort((a, b) => a.t.total - b.t.total);
 
-    if (plan.walkOnly) {
-        list.appendChild(walkOnlyRow(plan.walkOnly, rows[0] && rows[0].t));
-    }
     rows.forEach(r => list.appendChild(busPlanRow(r.p, r.i, r.t)));
 
+    /*
+      ★ '도보만' 줄을 목록에서 뺐다 (2026-08-23, 요청).
+
+      전에는 이 목록 맨 위에 '처음부터 끝까지 걷는 안'이 기준선으로 서 있었다.
+      그 줄이 하던 일이 둘이었고, 줄은 없애되 <b>둘 다 아래 안내 문구로 옮겼다</b> —
+
+        ① 버스 안이 하나도 없을 때 화면이 빈 채로 남지 않게 하는 것
+           (빼기만 하면 목록도 문구도 없는 흰 칸이 된다)
+        ② 버스가 근소하게 빠를 때 그 숫자를 믿지 말라고 알리는 것
+           — 버스 쪽 값에는 기다리는 시간이 빠져 있어서, 몇 분 차이는
+             정류장에서 서 있는 동안 그대로 뒤집힌다
+
+      ②를 안 옮기면 '버스 30분 / 걸어서 32분' 을 보고 나갔다가 배차를 기다리게 된다.
+      plan.walkOnly 는 서버가 여전히 주므로 값 자체는 그대로 쓴다.
+    */
     if (plan.message) {
         note.textContent = plan.message;
         note.hidden = false;
-    } else if (!plan.walkOnly && !(plan.plans || []).length) {
-        note.textContent = '갈 수 있는 길을 찾지 못했습니다.';
+
+    } else if (!rows.length) {
+        note.textContent = plan.walkOnly
+            ? `버스로 갈 만한 길이 없습니다. 걸어서 ${walkMinutes(plan.walkOnly.meters)}분 거리입니다.`
+            : '갈 수 있는 길을 찾지 못했습니다.';
         note.hidden = false;
+
+    } else if (plan.walkOnly) {
+        const best = rows[0].t;
+        const walkMin = walkMinutes(plan.walkOnly.meters);
+
+        // 기다림이 이미 값에 들어간 안(catchable)에는 붙이지 않는다 — 더 뺄 것이 없다.
+        if (!best.catchable && best.total > walkMin - 5) {
+            note.textContent = '위 버스 시간에는 기다리는 시간이 빠져 있습니다.'
+                + ` 걸어가면 ${walkMin}분이라, 이 정도 차이면 걷는 편이 빠를 수 있습니다.`;
+            // 이 문구만 눈에 띄게 둔다 — 나머지 안내와 같은 회색이면 지나친다.
+            note.classList.add('is-warn');
+            note.hidden = false;
+        }
     }
 }
 
-/**
- * 처음부터 끝까지 걷는 안. <b>비교의 기준선</b>이라 버스 안이 없어도 뜬다.
- *
- * @param best 가장 나은 버스 안의 계산값. 없으면 {@code null}
- */
-function walkOnlyRow(leg, best) {
-    const row = document.createElement('div');
-    row.className = 'plan-row is-walk';
-
-    const min = walkMinutes(leg.meters);
-
-    row.innerHTML = `<div class="plan-row-head">`
-        + `<span class="plan-kind">도보만</span>`
-        + `<span class="plan-time">${min}분</span>`
-        + `<span class="plan-tail">지금 출발</span></div>`
-        + `<div class="plan-sum">${leg.meters.toLocaleString()}m · 계단과 공사 구간을 피한 길`
-        + `${speedInfo.walkRatio != null ? ' · 내 속도 기준' : ' · 도보 기준 4km/h'}</div>`;
-
-    /*
-      ★ 버스가 근소하게 빠를 때는 그 숫자를 믿지 말라고 적는다.
-
-      기다리는 시간이 안 들어간 값이라, 몇 분 차이는 정류장에서 서 있는 동안 그대로
-      뒤집힌다. 청주는 배차가 촘촘해 덜 극단적이지만 짧은 거리에서는 거의 늘 걷는 쪽이 이기고,
-      배차가 드문 지역(보은은 하루 두세 편)에서는 두 시간을 기다리게 된다.
-
-      기다림이 이미 값에 들어간 안(catchable)에는 붙이지 않는다 — 그건 진짜 걸리는 시간이라
-      더 뺄 것이 없다.
-    */
-    if (best && !best.catchable && best.total > min - 5) {
-        const hint = document.createElement('div');
-        hint.className = 'plan-hint';
-        hint.textContent = '아래 버스 시간에는 기다리는 시간이 빠져 있습니다.'
-            + ' 이 정도 차이면 걸어가는 편이 빠를 수 있습니다.';
-        row.appendChild(hint);
-    }
-    return row;
-}
+/*
+  '도보만' 줄을 그리던 walkOnlyRow() 는 지웠다 (2026-08-23).
+  그 줄이 지고 있던 두 가지 책임은 renderPlan() 의 안내 문구로 옮겼다 — 거기 적어 뒀다.
+  되살릴 일이 있으면 git 이력에 남아 있다.
+*/
 
 /**
  * 이 안이 <b>지금 나가면 몇 분</b>인가. 기다리는 시간을 아는 만큼 넣는다.
@@ -2167,10 +2270,48 @@ function clearPlanLines() {
 }
 
 /**
+ * 길찾기 결과의 <b>탈 정류장을 자동으로 넣는다.</b>
+ *
+ * <p><b>왜 자동인가</b>: 복합 경로가 '사창사거리에서 40-2번을 타세요' 라고 답한 순간
+ * 탈 정류장은 이미 정해진 것이다. 그런데도 아래 칸에는 '정류장을 고르세요' 가 남아 있어서,
+ * 방금 답을 받은 사람이 그 정류장을 손으로 다시 찾아야 했다. 답을 알면서 묻지 않는다.
+ *
+ * <p><b>사람이 고른 것은 안 건드린다</b>({@code busStopAuto}). 정류장 목록에서 일부러
+ * 다른 곳을 고른 사람이 있다 — 그 사람의 도착판과 스톱워치가 까닭 없이 옮겨가면 안 된다.
+ *
+ * <p><b>지도는 안 옮긴다.</b> {@code usePlan} 은 누른 사람의 뜻이 '이걸 보겠다' 라서
+ * 화면을 맞추지만, 이쪽은 사용자가 부탁한 적 없는 동작이라 보던 자리를 뺏으면 안 된다.
+ */
+function autoPickFromPlan() {
+    const p = ((plan && plan.plans) || [])[0];
+    if (!p || !p.board) return;
+
+    // 사람이 고른 정류장이면 그대로 둔다.
+    if (busStop && !busStopAuto) return;
+
+    // 이미 그 정류장이면 도착판·기록을 괜히 다시 부르지 않는다.
+    if (busStop && busStop.stopId === p.board.stopId) return;
+
+    pickBusStop({
+        stopId: p.board.stopId, stopName: p.board.stopName,
+        latitude: p.board.latitude, longitude: p.board.longitude
+    }, true);
+
+    /*
+      바뀐 것을 말해 준다. 원래 이 자리를 안 건드린 이유가 '조용히 옮겨가면 안 된다' 였는데,
+      조용하지 않으면 그 걱정이 사라진다 — 무엇이 왜 채워졌는지 한 줄로 밝힌다.
+    */
+    setStatus(`${p.routeNo}번 저상버스 · ${p.board.stopName} 에서 탑니다.`, 'ok');
+}
+
+/**
  * 이 안으로 정한다 — <b>탈 정류장을 그 안의 것으로 바꾼다.</b>
  *
  * <p>그러면 도착판·스톱워치·나갈 시각 역산이 모두 같은 정류장을 보게 된다.
  * 계산한 시간과 실제로 재는 시간이 같은 구간에서 만나는 자리가 여기다.
+ *
+ * <p>여기서 고른 것은 <b>사람의 뜻</b>이라 {@code busStopAuto} 가 꺼진다(기본값).
+ * 그래야 다음 길찾기가 이 선택을 덮어쓰지 않는다.
  */
 function usePlan(i) {
     const p = ((plan && plan.plans) || [])[i];
@@ -2703,6 +2844,22 @@ let busStopId = null;    // 고른 정류장 키. 도착정보를 부를 때 그
 let busStop = null;      // { stopId, name, lat, lng }
 
 /**
+ * 지금 정류장이 <b>길찾기가 넣어준 것</b>인가, 사람이 고른 것인가.
+ *
+ * <p>이 한 칸이 있어야 '자동으로 채우기'와 '사람 뜻을 지키기'가 같이 된다.
+ * 복합 경로가 새로 나올 때마다 정류장을 갈아끼우면, 정류장 목록에서 일부러 고른 사람이
+ * 까닭도 모른 채 다른 정류장의 도착판을 보게 된다 — 스톱워치 기록도 그쪽으로 묶인다.
+ *
+ * <p>그래서 규칙은 셋이다.
+ * <pre>
+ *   비어 있으면          길찾기 결과로 채운다
+ *   길찾기가 채운 것이면  새 결과로 갈아끼운다 (경로를 따라다니는 게 맞다)
+ *   사람이 고른 것이면    건드리지 않는다
+ * </pre>
+ */
+let busStopAuto = false;
+
+/**
  * 출발지에서 그 정류장까지의 <b>도보 거리</b>(m). 스톱워치 기록에 같이 저장한다.
  *
  * <p>{@code lastMeters}(지도에 그려진 경로의 거리)를 쓰면 안 된다 — 그건 도착지까지의
@@ -3052,8 +3209,9 @@ function scheduleStopsInView() {
  * 그래야 집→정류장 경로가 그려지고, 스톱워치 기록도 이 정류장 것으로 묶인다.
  * 칸을 따로 두면 같은 곳을 두 번 넣어야 한다.
  */
-function pickBusStop(stop) {
+function pickBusStop(stop, auto = false) {
     busStopId = stop.stopId;
+    busStopAuto = !!auto;       // 사람이 고른 것과 길찾기가 넣은 것을 구분한다
 
     /*
       ★ 도착지 칸에 넣지 않는다. 전에는 setPlace('end', …) 했는데,
@@ -3721,6 +3879,58 @@ function insideService(lat, lng) {
  *
  * <p>좌표는 브라우저 안에서만 쓴다. 서버로 보내지 않는다.
  */
+/**
+ * 열자마자 지도를 어디에 둘 것인가. 우선순위가 있다.
+ *
+ * <pre>
+ *   1. 등록해둔 집        사용자가 직접 정해 저장한 좌표다. 제일 믿을 만하다
+ *   2. 현재 위치(GPS)      집이 없을 때만 묻는다
+ *   3. 안내 지역 한가운데   둘 다 없을 때. initMap 이 이미 잡아둔 자리다
+ * </pre>
+ *
+ * <p><b>★ 집이 있으면 GPS 를 아예 부르지 않는다.</b> 두 가지를 같이 얻는다 —
+ * 집을 등록해둔 사람에게 위치 권한 창을 띄우지 않고, <b>늦게 도착한 GPS 가
+ * 집을 밀어내는 일</b>도 없어진다. 순서를 안 정하면 둘 중 어느 쪽이 이기는지가
+ * 그때그때 응답 속도에 달리는데, 그건 재현이 안 되는 형태의 버그다.
+ *
+ * <p><b>지도 탭과 버스 탭이 지도 하나를 같이 쓴다.</b> 여기서 한 번만 잡으면
+ * 양쪽에 다 걸린다 — 탭마다 따로 옮기면 탭을 오갈 때 화면이 튄다.
+ *
+ * <p>안내 지역 밖인 집({@code usable=false})으로는 옮기지 않는다. 그 자리에는
+ * 그려줄 길이 하나도 없어서, 옮기지 않느니만 못한 빈 화면이 된다.
+ */
+async function centerOnStart() {
+    // 비로그인은 물어볼 것도 없다 — 서버가 401 로 답한다.
+    if (!loginId) {
+        moveToMyArea();
+        return;
+    }
+
+    let home = null;
+    try {
+        const res = await fetch('/api/places/' + PLACE_KINDS.home.type);
+        if (res.ok) {
+            const data = await res.json();
+            home = (data.ok && data.place) ? data.place : null;   // 등록 전이면 null 이다
+        }
+    } catch {
+        // 집을 못 받아도 지도는 떠 있어야 한다. 아래에서 GPS 로 넘어간다.
+    }
+
+    if (!home || !home.usable) {
+        moveToMyArea();
+        return;
+    }
+
+    // 받아오는 사이에 출발·도착이 정해졌으면 그쪽이 우선이다.
+    // moveToMyArea 가 GPS 응답에서 하는 검사와 같은 이유다.
+    if (picked.start || picked.end) {
+        return;
+    }
+
+    map.setCenter(new kakao.maps.LatLng(Number(home.latitude), Number(home.longitude)));
+}
+
 function moveToMyArea() {
     if (!navigator.geolocation) {
         return;
@@ -3865,17 +4075,19 @@ function wire() {
         btn.addEventListener('click', () => clearField(btn.dataset.clear));
     });
 
-    // 저장된 장소는 로그인이 붙어야 채울 수 있다. 지금은 안내만 띄운다.
-    document.querySelectorAll('.shortcut').forEach(btn => {
-        btn.addEventListener('click', () =>
-            setStatus(`'${btn.textContent.trim()}' 은(는) 로그인 기능이 붙은 뒤에 쓸 수 있습니다.`));
-    });
+    wirePlaces();
+    wireReport();
 
-    // 이동수단 탭. 같은 출발·도착에 대해 패널만 바뀐다 —
-    // 지도는 길안내, 버스는 나갈 시각, 택시는 아직 자리만.
-    // 선택자를 이름으로 좁힌다: .rail-tab 전체를 잡으면 MY·제보까지 걸려서
-    // 제보를 눌렀을 때 '제보 길찾기는 준비 중입니다' 가 뜬 뒤 이동한다(실제로 그랬다).
-    ['map', 'bus', 'taxi'].forEach(name => {
+    /*
+      레일 탭. 같은 화면 안에서 패널만 바뀐다 —
+      지도는 길안내, 버스는 나갈 시각, 택시는 기관 안내, 제보는 이 자리 올리기.
+
+      선택자를 이름으로 좁힌다: .rail-tab 전체를 잡으면 MY 까지 걸린다(아직 화면이 없다).
+
+      ★ 제보가 여기 들어왔다(2026-08-24). 예전에는 /report.html 로 넘어가는 <a> 라
+      이 목록에 없었다. 버튼으로 바뀌었으니 이름을 넣어주지 않으면 아무 일도 안 한다.
+    */
+    ['map', 'bus', 'taxi', 'report'].forEach(name => {
         const btn = document.querySelector(`.rail-tab[data-tab="${name}"]`);
         if (btn) btn.addEventListener('click', () => selectTab(name));
     });
@@ -3958,7 +4170,1120 @@ function wire() {
     // ── 버스 탭 — 스톱워치와 역산
     $('r-arrive').addEventListener('input', renderLeave);
     $('sw-btn').addEventListener('click', toggleTrack);
+
+    wireChat();
+}
+
+/* ── 길 안내 도우미 (챗봇) ───────────────────────────────────────
+
+   글로 물으면 길을 찾아준다(2026-08-21). 음성은 아직이다.
+
+     글   입력칸 → POST /api/chat/text  → 답 문장 + 경로
+     음성 녹음 → WAV → POST /api/chat/voice → 같은 답
+
+   ★ 뒤(목적지 해석·좌표·길찾기·답 문장)는 두 길이 완전히 같다. 음성이 더 하는 일은
+     전사 하나뿐이다 - 글 쪽을 먼저 붙여 검증하고 앞단만 갈아끼웠다.
+
+   ★ 음성인식 서버(whisper.cpp)는 run-whisper.cmd 로 따로 띄운다. 안 띄워도 챗봇은
+     돈다 - 마이크만 잠기고 타이핑으로는 그대로 길을 찾아준다.
+
+   ★ 왜 레일 탭이 아닌가: map.html 의 주석 참고. 어느 탭에서든 부를 수 있어야 하고,
+   탭으로 만들면 selectTab 의 이름 목록과 '준비 중' 핸들러에 얽힌다.
+   ------------------------------------------------------------------ */
+
+/** 녹음을 몇 ms 뒤에 자동으로 끊을지. 실측 발화가 2~4초라 10초면 넉넉하다. */
+const CHAT_MAX_MS = 10000;
+
+let chatOpen = false;
+let chatRecording = false;
+let chatAutoStop = null;   // 자동 종료 타이머
+let chatThinking = null;   // '생각 중' 말풍선 엘리먼트
+let chatWarmed = false;    // 정류장 캐시를 한 번이라도 데웠는가 (warmChat)
+
+function toggleChat(open) {
+    chatOpen = (open === undefined) ? !chatOpen : open;
+    $('chat').hidden = !chatOpen;
+    $('chat-fab').hidden = chatOpen;
+
+    if (chatOpen) {
+        // 처음 열 때만 인사한다. 닫았다 열 때마다 다시 인사하면 대화가 지워진 것처럼 보인다.
+        if (!$('chat-log').children.length) {
+            chatSay('bot', '어디로 가시겠어요?\n마이크를 누르고 말씀하시거나 아래에 입력하세요.');
+        }
+        warmChat();
+        checkVoice();
+
+    } else if (chatRecording) {
+        // 열린 채로만 의미가 있는 동작이다. 닫으면서 멈추지 않으면 보이지 않는 곳에서 계속 녹음된다.
+        stopChatRecording(true);
+    }
+}
+
+/** 말풍선 하나를 붙이고 맨 아래로 스크롤한다. */
+function chatSay(kind, text) {
+    const el = document.createElement('div');
+    el.className = 'chat-msg ' + kind;
+    el.textContent = text;
+    $('chat-log').appendChild(el);
+    $('chat-log').scrollTop = $('chat-log').scrollHeight;
+    return el;
+}
+
+/**
+ * 창을 열 때 서버 쪽 정류장 캐시를 미리 데운다.
+ *
+ * ★ 왜 필요한가: 목적지 이름을 고치는 후보 목록을 정류장 이름으로 만드는데, 그 목록이
+ *   비어 있으면 서버가 지역 전체를 TAGO 에서 받아온다. 실측으로 <b>첫 한 번이 8~11초</b>고
+ *   그 다음부터는 1초 안쪽이다(캐시 30분). 하필 그 첫 한 번이 사용자의 첫 질문이라
+ *   "느린 챗봇" 이라는 첫인상이 된다.
+ *
+ *   창을 여는 것과 말을 거는 것 사이에는 최소 몇 초가 있다. 그 사이에 받아두면
+ *   사용자는 기다림을 느끼지 않는다.
+ *
+ * 실패해도 아무 말 하지 않는다 — 사용자가 시킨 일이 아니고, 안 되더라도
+ * 첫 질문이 조금 느릴 뿐이다.
+ */
+function warmChat() {
+    if (chatWarmed || !map) {
+        return;
+    }
+    chatWarmed = true;
+
+    const b = map.getBounds();
+    const sw = b.getSouthWest(), ne = b.getNorthEast();
+    fetch('/api/bus/stops-in'
+        + `?minLat=${sw.getLat()}&minLng=${sw.getLng()}`
+        + `&maxLat=${ne.getLat()}&maxLng=${ne.getLng()}&limit=1`).catch(() => {});
+}
+
+/** 답을 기다리는 동안의 점 세 개. 같은 자리를 나중에 진짜 답으로 바꾼다. */
+function chatThink() {
+    const el = document.createElement('div');
+    el.className = 'chat-msg bot';
+    el.innerHTML = '<span class="chat-dots"><i></i><i></i><i></i></span>';
+    $('chat-log').appendChild(el);
+    $('chat-log').scrollTop = $('chat-log').scrollHeight;
+    return el;
+}
+
+function chatState(text) {
+    $('chat-state').textContent = text;
+}
+
+/**
+ * 녹음 토글.
+ *
+ * <p>누르고 있는 방식이 아니라 토글인 이유: 휠체어 사용자가 한 손으로 쓰거나
+ * 손 움직임이 불편한 경우 버튼을 누른 채 유지하는 것이 부담이 된다.
+ * 대신 끄는 것을 깜빡할 수 있어 {@link CHAT_MAX_MS} 로 자동 종료한다.
+ */
+function toggleChatRecording() {
+    if (chatRecording) {
+        stopChatRecording(false);
+    } else {
+        startChatRecording();
+    }
+}
+
+/* ── 녹음 (getUserMedia + Web Audio → 16kHz mono WAV) ──────────
+
+   ★ MediaRecorder 를 쓰지 않는다.
+
+   그쪽이 훨씬 짧지만 나오는 것이 webm/opus 라, 받는 쪽(whisper.cpp)에 ffmpeg 를 깔고
+   --convert 를 켜야 한다. 팀원마다 깔아야 하는 것을 하나라도 줄이는 편이 낫다.
+   여기서 WAV 로 만들어 보내면 whisper 가 그대로 읽는다.
+
+   ★ 16kHz 인 이유는 whisper 가 내부적으로 16kHz 로 다시 샘플링하기 때문이다.
+   48kHz 를 보내면 그 일을 두 번 하고 업로드도 3배가 된다.
+   ------------------------------------------------------------------ */
+
+/** 녹음에 쓰는 것들. 멈출 때 전부 정리해야 마이크 표시등이 꺼진다. */
+let chatStream = null;      // MediaStream — 이걸 안 끄면 탭에 녹음중 표시가 남는다
+let chatAudioCtx = null;
+let chatNode = null;        // ScriptProcessorNode
+let chatChunks = [];        // Float32Array 조각들
+let chatVoiceOk = null;     // 서버가 음성을 받을 수 있는가. null 이면 아직 안 물어봤다
+
+/** 마지막 녹음의 소리 크기. 마이크가 실제로 잡혔는지 판단한다(encodeWav 가 채운다). */
+let lastRecPeak = 0;
+let lastRecRms = 0;
+
+/**
+ * 이보다 조용하면 보내지 않는다.
+ *
+ * whisper 는 무음에 문장을 지어내므로, 보내면 '엉뚱한 답' 이 돌아오고 사용자는
+ * 인식이 나쁘다고 여긴다. 실제로는 마이크가 안 잡힌 것이다 — 그 둘을 갈라준다.
+ * 0.02 는 말소리로는 확실히 낮고(보통 0.1~0.5), 조용한 방의 잡음보다는 높다.
+ */
+const REC_MIN_PEAK = 0.02;
+
+/**
+ * whisper 가 떠 있는지 물어본다. 창을 열 때, 그리고 마이크를 누를 때 한다.
+ *
+ * ★ '된다'만 기억하고 '안 된다'는 기억하지 않는다.
+ *
+ *   전에는 첫 답을 그대로 캐시했다. 그랬더니 whisper 를 나중에 띄웠을 때
+ *   <b>새로고침 전까지 영영 안 됐다</b> — 서버가 꺼진 상태로 페이지를 열어두면
+ *   chatVoiceOk 가 false 로 굳어서 다시 물어보지 않았다(2026-08-24 실제로 겪음).
+ *
+ *   whisper 는 챗봇과 따로 띄우는 물건이라 '나중에 켜는' 것이 정상 흐름이다.
+ *   그 흐름에서 화면이 회복되지 않으면 안 된다.
+ *
+ *   반대로 '된다'는 굳혀도 안전하다. 도중에 꺼지면 실제 요청이 실패하면서
+ *   sendVoiceToServer 가 그때 말해준다.
+ */
+async function checkVoice() {
+    if (chatVoiceOk === true) {
+        return true;
+    }
+    try {
+        const r = await fetch('/api/chat/voice/available');
+        chatVoiceOk = (await r.json()).available === true;
+    } catch {
+        chatVoiceOk = false;
+    }
+
+    if (chatVoiceOk) {
+        // 꺼져 있다가 켜진 경우다. 잠가뒀던 것을 되돌린다.
+        $('chat-mic').disabled = false;
+        $('chat-mic').title = '누르면 녹음, 다시 누르면 종료';
+        if (!chatRecording) {
+            chatState('마이크를 누르고 말씀하세요');
+        }
+        return true;
+    }
+
+    /*
+      ★ 못 쓰면 그 자리에서 말한다.
+
+      전에는 마이크를 눌러 10초를 녹음한 뒤에야 '연결되지 않았습니다' 가 떴다.
+      그러면 사용자는 자기 마이크나 이어폰을 의심한다 — 실제로 그 자리에서
+      '이어폰이 연결이 안 되나' 를 먼저 확인하게 됐다.
+    */
+    $('chat-mic').disabled = true;
+    $('chat-mic').title = '음성인식 서버가 꺼져 있습니다';
+    chatState('지금은 입력으로만 물어볼 수 있습니다');
+    return false;
+}
+
+async function startChatRecording() {
+    /*
+      ★ 마이크는 https 또는 localhost 에서만 열린다.
+      휴대폰으로 이 PC 의 IP(http://192.168.x.x:8080)에 붙으면 여기서 막힌다.
+      코드 문제가 아니므로 이유를 그대로 말해준다 — 도메인+HTTPS 를 붙이면 풀린다.
+    */
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        chatSay('fail', '이 브라우저에서는 마이크를 쓸 수 없습니다.\n주소가 https 가 아니면 브라우저가 마이크를 막습니다. 아래에 입력해 주세요.');
+        return;
+    }
+    if (!(await checkVoice())) {
+        chatSay('fail', '음성인식 서버가 꺼져 있습니다.\nrun-whisper.cmd 를 띄우거나, 아래에 입력해 주세요.');
+        return;
+    }
+
+    try {
+        // 잡음 억제를 켠다. 밖에서 쓰는 화면이라 이게 전사 정확도에 그대로 온다.
+        chatStream = await navigator.mediaDevices.getUserMedia({
+            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+        });
+    } catch (e) {
+        // 권한 거부와 장치 없음을 나눠서 말한다. 사용자가 할 일이 다르다.
+        chatSay('fail', e && e.name === 'NotAllowedError'
+            ? '마이크 사용이 거부되었습니다.\n주소창의 마이크 아이콘에서 허용으로 바꿔 주세요.'
+            : '마이크를 찾지 못했습니다.\n이어폰이나 마이크가 연결돼 있는지 확인해 주세요.');
+        return;
+    }
+
+    chatAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = chatAudioCtx.createMediaStreamSource(chatStream);
+
+    /*
+      ScriptProcessorNode 는 낡은 API 다(AudioWorklet 이 후계자).
+      그래도 이걸 쓰는 이유: 하는 일이 '들어오는 조각을 모으기' 뿐이라 워크릿의
+      별도 파일·메시지 왕복이 순수하게 부품 수만 늘린다. 10초짜리 한 마디에
+      성능 문제가 생길 여지도 없다.
+    */
+    chatChunks = [];
+    chatNode = chatAudioCtx.createScriptProcessor(4096, 1, 1);
+    chatNode.onaudioprocess = (e) => {
+        // 그대로 두면 다음 조각이 덮어쓴다. 복사해서 쌓는다.
+        chatChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+
+    src.connect(chatNode);
+    // ★ destination 에 이어야 onaudioprocess 가 돈다. 소리를 내보내려는 게 아니다 —
+    //   그래서 gain 0 을 사이에 둔다. 안 그러면 자기 목소리가 스피커로 되돌아온다.
+    const mute = chatAudioCtx.createGain();
+    mute.gain.value = 0;
+    chatNode.connect(mute);
+    mute.connect(chatAudioCtx.destination);
+
+    chatRecording = true;
+    $('chat-mic').classList.add('rec');
+    $('chat-mic').setAttribute('aria-label', '녹음 종료');
+    chatState('듣는 중… 다시 누르면 끝납니다');
+
+    chatAutoStop = setTimeout(() => stopChatRecording(false), CHAT_MAX_MS);
+}
+
+/**
+ * @param quiet 닫기 등으로 취소된 경우. 인식으로 넘기지 않고 조용히 되돌린다.
+ */
+async function stopChatRecording(quiet) {
+    if (!chatRecording) {
+        return;
+    }
+    chatRecording = false;
+    clearTimeout(chatAutoStop);
+    chatAutoStop = null;
+
+    $('chat-mic').classList.remove('rec');
+    $('chat-mic').setAttribute('aria-label', '녹음 시작');
+
+    const chunks = chatChunks;
+    const rate = chatAudioCtx ? chatAudioCtx.sampleRate : 0;
+    releaseMic();
+
+    if (quiet) {
+        chatState('마이크를 누르고 말씀하세요');
+        return;
+    }
+
+    const wav = await encodeWav(chunks, rate);
+    if (!wav) {
+        chatSay('fail', '녹음된 소리가 없습니다. 다시 눌러 말씀해 주세요.');
+        chatState('마이크를 누르고 말씀하세요');
+        return;
+    }
+
+    /*
+      ★ 너무 조용하면 보내지 않는다. 보내면 whisper 가 문장을 지어내고,
+        사용자는 '인식이 엉망' 이라고 읽게 된다. 진짜 원인은 마이크다.
+    */
+    if (lastRecPeak < REC_MIN_PEAK) {
+        chatSay('fail',
+            '소리가 거의 들어오지 않았습니다. (최대 ' + lastRecPeak.toFixed(3) + ')\n'
+            + '이어폰 마이크가 녹음 장치로 잡혀 있는지, 음소거는 아닌지 확인해 주세요.');
+        chatState('마이크를 누르고 말씀하세요');
+        return;
+    }
+
+    chatState('알아듣는 중…');
+    sendVoiceToServer(wav);
+}
+
+/**
+ * 마이크를 놓아준다.
+ *
+ * ★ 트랙을 stop 하지 않으면 탭에 '녹음 중' 표시가 계속 남는다. 실제로 녹음은
+ *   안 하고 있는데도 그렇게 보이는 것은, 이 서비스에서는 그냥 버그가 아니다.
+ */
+function releaseMic() {
+    if (chatNode) {
+        chatNode.onaudioprocess = null;
+        chatNode.disconnect();
+        chatNode = null;
+    }
+    if (chatAudioCtx) {
+        chatAudioCtx.close().catch(() => {});
+        chatAudioCtx = null;
+    }
+    if (chatStream) {
+        chatStream.getTracks().forEach(t => t.stop());
+        chatStream = null;
+    }
+    chatChunks = [];
+}
+
+/**
+ * 모아둔 조각을 16kHz mono 16bit WAV 로.
+ *
+ * ★ 리샘플링을 손으로 하지 않는다. OfflineAudioContext 에 16000 을 주고 한 번 렌더하면
+ *   브라우저가 제대로 된 필터를 걸어 내려준다. 값을 건너뛰며 뽑는 방식은 코드는 짧지만
+ *   에일리어싱이 생겨 치찰음이 뭉개진다 — 지명 인식에 그대로 손해다.
+ */
+async function encodeWav(chunks, rate) {
+    if (!chunks.length || !rate) {
+        return null;
+    }
+
+    let total = 0;
+    chunks.forEach(c => { total += c.length; });
+    if (total < rate * 0.3) {
+        return null;              // 0.3초 미만이면 누르자마자 뗀 것이다
+    }
+
+    const flat = new Float32Array(total);
+    let at = 0;
+    for (const c of chunks) {
+        flat.set(c, at);
+        at += c.length;
+    }
+
+    const TARGET = 16000;
+    let samples = flat;
+
+    if (rate !== TARGET) {
+        const off = new OfflineAudioContext(1, Math.ceil(total * TARGET / rate), TARGET);
+        const buf = off.createBuffer(1, total, rate);
+        buf.copyToChannel(flat, 0);
+        const node = off.createBufferSource();
+        node.buffer = buf;
+        node.connect(off.destination);
+        node.start();
+        samples = (await off.startRendering()).getChannelData(0);
+    }
+
+    /*
+      ★ 소리가 실제로 들어왔는지 잰다.
+
+      whisper 는 <b>거의 무음이면 엉뚱한 문장을 지어낸다</b>('시청해주셔서 감사합니다' 류).
+      그게 오인식과 증상이 똑같아서, 마이크가 안 잡히고 있는 것을 '인식이 나쁘다' 로
+      오해하게 된다 — 2026-08-24 에 실제로 그렇게 헤맸다.
+
+      그래서 보내기 전에 우리가 먼저 본다. 값은 stopChatRecording 이 판단한다.
+    */
+    let peak = 0;
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+        const a = Math.abs(samples[i]);
+        if (a > peak) peak = a;
+        sum += samples[i] * samples[i];
+    }
+    lastRecPeak = peak;
+    lastRecRms = Math.sqrt(sum / samples.length);
+    console.log('[chat] 녹음 %.1f초 · peak %.3f · rms %.4f',
+        samples.length / TARGET, lastRecPeak, lastRecRms);
+
+    // WAV 헤더 44바이트 + 16bit PCM
+    const n = samples.length;
+    const out = new DataView(new ArrayBuffer(44 + n * 2));
+    const ascii = (at, s) => { for (let i = 0; i < s.length; i++) out.setUint8(at + i, s.charCodeAt(i)); };
+
+    ascii(0, 'RIFF');
+    out.setUint32(4, 36 + n * 2, true);
+    ascii(8, 'WAVEfmt ');
+    out.setUint32(16, 16, true);          // fmt 청크 길이
+    out.setUint16(20, 1, true);           // PCM
+    out.setUint16(22, 1, true);           // mono
+    out.setUint32(24, TARGET, true);
+    out.setUint32(28, TARGET * 2, true);  // byte rate
+    out.setUint16(32, 2, true);           // block align
+    out.setUint16(34, 16, true);          // bits
+    ascii(36, 'data');
+    out.setUint32(40, n * 2, true);
+
+    for (let i = 0; i < n; i++) {
+        // ★ 자를 때 -1~1 밖을 먼저 막는다. 넘긴 채로 곱하면 감싸돌면서 지직거린다.
+        const v = Math.max(-1, Math.min(1, samples[i]));
+        out.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+    }
+    return new Blob([out.buffer], { type: 'audio/wav' });
+}
+
+/**
+ * 녹음을 서버로. 글로 물었을 때와 <b>같은 답</b>이 온다.
+ *
+ * 새로 하는 일은 전사뿐이고 목적지 해석·좌표·길찾기는 이미 검증된 길을 탄다.
+ */
+async function sendVoiceToServer(wav) {
+    $('chat-mic').disabled = true;
+    chatThinking = chatThink();
+
+    const body = new FormData();
+    body.append('audio', wav, 'a.wav');
+    if (picked.start) {
+        body.append('lat', picked.start.lat);
+        body.append('lng', picked.start.lng);
+    }
+
+    let ans;
+    try {
+        ans = await (await fetch('/api/chat/voice', { method: 'POST', body })).json();
+    } catch {
+        chatAnswer('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.', true);
+        return;
+    }
+
+    /*
+      ★ 무엇으로 알아들었는지를 먼저 흐리게 남긴다.
+
+      오인식했을 때 이게 없으면 사용자는 '왜 엉뚱한 곳으로 가지' 만 알고 이유를 모른다.
+      들은 말이 보이면 다시 말할지 고쳐 칠지를 스스로 정할 수 있다.
+    */
+    if (ans.heard) {
+        const el = chatSay('heard', '“' + ans.heard + '” 로 들었어요');
+        // 답보다 먼저 와야 순서가 맞다. chatThink 자리 앞으로 옮긴다.
+        if (chatThinking) {
+            $('chat-log').insertBefore(el, chatThinking);
+        }
+    }
+
+    chatAnswer(ans.answer);
+
+    if (ans.path && ans.path.length) {
+        drawChatRoute(ans);
+    }
+}
+
+/** 입력칸으로 물었을 때. 녹음을 건너뛰고 곧장 같은 자리로 들어간다. */
+function submitChatText(e) {
+    e.preventDefault();
+    const text = $('chat-input').value.trim();
+    if (!text) {
+        return;
+    }
+    $('chat-input').value = '';
+    chatSay('me', text);
+    sendToServer(text);
+}
+
+/**
+ * 챗봇 한 마디를 서버로 보낸다.
+ *
+ * ★ 보내는 곳은 Gemini 가 아니라 우리 스프링이다. 브라우저가 Gemini·카카오를 직접 부르면
+ *   API 키가 F12 에 그대로 노출된다. 스프링이 안에서 whisper·Gemini·카카오를 부른다.
+ *
+ *   브라우저 ──POST /api/chat/text──> 스프링
+ *                                       ├─ Gemini    목적지 이름만
+ *                                       ├─ 정류장캐시/카카오  좌표
+ *                                       └─ IRouteService     길찾기
+ *
+ * ★ 숫자는 전부 서버가 준 것만 쓴다. 여기서 거리·시간을 다시 계산하지 않는다 —
+ *   두 곳에서 계산하면 말풍선과 패널이 다른 숫자를 말하게 된다.
+ *
+ * @param text 입력칸으로 받은 문장. 녹음이면 null 이고 오디오를 대신 보낸다(2단계).
+ */
+async function sendToServer(text) {
+    $('chat-mic').disabled = true;
+    chatThinking = chatThink();
+    chatState('길 찾는 중…');
+
+    const body = new URLSearchParams();
+    body.set('text', text);
+
+    /*
+      화면에 이미 출발지가 있으면 그 좌표를 같이 보낸다.
+
+      ★ 서버는 이 값을 등록해둔 집보다 우선한다. 사용자가 검색해서 찍었거나
+        [현재 위치] 를 눌러 잡아둔 것이라, 그걸 무시하고 집에서 출발하는 경로를 내면
+        밖에서 쓸 때 엉뚱해진다. 아무것도 안 보내면 서버가 집을 쓴다.
+    */
+    if (picked.start) {
+        body.set('lat', picked.start.lat);
+        body.set('lng', picked.start.lng);
+    }
+
+    let ans;
+    try {
+        const res = await fetch('/api/chat/text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body
+        });
+        ans = await res.json();
+
+    } catch {
+        chatAnswer('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.', true);
+        return;
+    }
+
+    chatAnswer(ans.answer);
+
+    // 경로가 나왔으면 지도에도 그린다. 말로만 알려주면 어디로 가는지 알 수 없다.
+    if (ans.path && ans.path.length) {
+        drawChatRoute(ans);
+    }
+}
+
+/**
+ * 말풍선을 채우고 마이크를 다시 연다.
+ *
+ * '생각 중' 점 세 개가 있던 자리를 그대로 답으로 바꾼다 — 지웠다가 새로 붙이면
+ * 대화가 한 칸 튄다.
+ */
+function chatAnswer(text, fail) {
+    if (chatThinking) {
+        chatThinking.remove();
+        chatThinking = null;
+    }
+    chatSay(fail ? 'fail' : 'bot', text);
+
+    /*
+      ★ 음성인식 서버가 꺼져 있으면 마이크를 다시 열지 않는다.
+
+      전에는 무조건 열었더니, whisper 를 안 띄운 상태에서 타이핑으로 한 번 물어본 뒤
+      마이크가 멀쩡해 보였다. 눌러도 안 되는 버튼을 켜두면 사용자는 자기 마이크를 의심한다.
+    */
+    if (chatVoiceOk === false) {
+        chatState('지금은 입력으로만 물어볼 수 있습니다');
+        return;
+    }
+    $('chat-mic').disabled = false;
+    chatState('마이크를 누르고 말씀하세요');
+}
+
+/**
+ * 챗봇이 낸 경로를 지도와 패널에 얹는다.
+ *
+ * ★ /api/route 를 다시 부르지 않는다. 서버가 이미 탐색해서 path 까지 보내줬는데
+ *   또 부르면 같은 계산을 두 번 하고, 그 사이에 차단 목록이 바뀌면 말풍선과 지도가
+ *   다른 경로를 말하게 된다.
+ *
+ * setPlace 를 쓰는 이유는 핀·정류장 재측정·탈 정류장 후보가 전부 거기 묶여 있어서다.
+ * (setPlace 자체는 재탐색을 부르지 않는다 — maybeRoute 는 choosePlace 쪽에 있다)
+ */
+function drawChatRoute(ans) {
+    setPlace('start', { name: '출발지', lat: ans.start[0], lng: ans.start[1] });
+    setPlace('end', { name: ans.destination, lat: ans.end[0], lng: ans.end[1] });
+
+    if (routeLine) {
+        routeLine.setMap(null);
+        routeLine = null;
+    }
+
+    const points = ans.path.map(p => new kakao.maps.LatLng(p[0], p[1]));
+
+    routeLine = new kakao.maps.Polyline({
+        path: points, strokeWeight: 7, strokeColor: '#1565c0',
+        strokeOpacity: .95, strokeStyle: 'solid', zIndex: 4, map: map
+    });
+
+    // 거리 하나만 넘긴다. showRoute 가 보는 것이 그것뿐이고, 나머지는 화면이 다시 만든다.
+    showRoute({ distanceM: ans.distanceM });
+
+    // 검색결과 마커는 경로를 가린다.
+    clearResultMarkers();
+    $('pane-search').hidden = true;
+
+    const bounds = new kakao.maps.LatLngBounds();
+    points.forEach(p => bounds.extend(p));
+    map.setBounds(bounds);
+}
+
+function wireChat() {
+    $('chat-fab').addEventListener('click', () => toggleChat(true));
+    $('chat-close').addEventListener('click', () => toggleChat(false));
+    $('chat-mic').addEventListener('click', toggleChatRecording);
+    $('chat-type').addEventListener('submit', submitChatText);
+
+    // 열려 있을 때만 Esc 로 닫는다. 다른 화면의 Esc 동작을 가로채지 않는다.
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chatOpen) {
+            toggleChat(false);
+        }
+    });
 }
 
 wire();
 boot();
+
+/* ── 제보 ──────────────────────────────────────────────────
+   예전에는 /report.html 로 페이지를 넘어갔다. 같은 줄의 탭인데 혼자만 화면이 바뀌니
+   보던 지도와 찍어둔 출발·도착이 통째로 사라졌다 — 제보는 '지금 보고 있는 이 자리' 를
+   올리는 일이라 그게 특히 손해였다. 이제 이 화면 안에서 끝난다.
+
+   ★ 임시 디자인이다. 올리는 데 꼭 필요한 것만 옮겨왔다 —
+   미리보기 원·막히는 보도 수·내 제보 목록은 아직 없다(관리자 화면에 있다).
+
+   /report.html 은 그대로 둔다. 링크로 바로 들어오는 길이고 JS 없이도 돈다.
+   ------------------------------------------------------------------ */
+
+// 화살표 상수가 아니라 함수 선언이다 — 위 배선(wireReport)보다 소스가 뒤에 있어서
+// const 로 두면 TDZ 에 걸린다.
+function rpSeverity() {
+    return document.querySelector('input[name="rp2sev"]:checked').value;
+}
+
+function wireReport() {
+    document.querySelectorAll('input[name="rp2sev"]').forEach(r =>
+        r.addEventListener('change', rpSyncHint));
+
+    $('rp2-radius').addEventListener('input', () => {
+        $('rp2-radius-label').textContent = `${$('rp2-radius').value}m`;
+    });
+
+    $('rp2-save').addEventListener('click', rpSave);
+    $('rp2-clear').addEventListener('click', () => {
+        rpSetPos(null);
+        rpMsg('');
+    });
+
+    rpSyncHint();
+}
+
+function rpSyncHint() {
+    $('rp2-sev-hint').textContent = RP_SEV_HINT[rpSeverity()] || '';
+}
+
+/** 찍은 자리를 바꾼다. {@code null} 이면 지운다. */
+function rpSetPos(latLng) {
+    rpPos = latLng;
+
+    if (rpMarker) { rpMarker.setMap(null); rpMarker = null; }
+    if (rpDot) { rpDot.setMap(null); rpDot = null; }
+
+    const box = $('rp2-pos');
+    if (!latLng) {
+        box.className = 'rp2-pos';
+        box.textContent = '지도를 클릭해 위치를 찍으세요.';
+        $('rp2-save').disabled = true;
+        return;
+    }
+
+    /*
+      점과 라벨을 <b>따로</b> 얹는다.
+
+      placePin 은 yAnchor 1.6 이라 라벨이 좌표보다 위에 뜬다 — 가리지 않으려는 것인데,
+      그러면 <b>어디가 찍힌 자리인지 정작 안 보인다.</b> 제보는 '이 자리' 가 전부라
+      그게 곧 무엇을 올리는지 모르는 것과 같다.
+
+      그래서 좌표에 정확히 얹는 점을 하나 더 둔다. 라벨은 그대로 위에 남긴다 —
+      점만 있으면 그게 제보인지 다른 표시인지 알 수 없다.
+    */
+    const dot = document.createElement('div');
+    dot.className = 'rp2-dot';
+    rpDot = new kakao.maps.CustomOverlay({
+        position: latLng, content: dot, zIndex: 8, map: map
+    });
+
+    rpMarker = placePin(latLng, '제보', '#d32f2f');
+    box.className = 'rp2-pos on';
+    box.textContent = `찍은 자리 ${latLng.getLat().toFixed(5)}, ${latLng.getLng().toFixed(5)}`
+        + ' — 다시 클릭하면 옮겨집니다.';
+
+    /*
+      자리가 찍혔으면 등록을 연다. <b>로그인 여부로 잠그지 않는다</b> —
+      위쪽 안내 상자를 걷어내서, 잠가두면 왜 못 누르는지 알 길이 없다.
+      비로그인은 서버가 거절하고 그 문구에 로그인 링크가 붙는다(rpMsg).
+    */
+    $('rp2-save').disabled = false;
+}
+
+function rpMsg(text, ok) {
+    const box = $('rp2-msg');
+    box.hidden = !text;
+    box.className = 'rp2-msg ' + (ok ? 'ok' : 'fail');
+    box.textContent = text;
+
+    /*
+      로그인 때문에 막힌 것이면 갈 곳을 같이 준다.
+
+      위쪽 안내 상자를 걷어냈으므로(2026-08-24) 여기가 <b>로그인이 필요하다는 것을 알 수 있는
+      유일한 자리</b>다. 문구만 남기면 어디서 로그인하는지 알 수 없다.
+    */
+    if (!ok && text.includes('로그인')) {
+        const a = document.createElement('a');
+        a.href = '/user/login';
+        a.textContent = ' 로그인하러 가기 ↗';
+        a.style.cssText = 'color:inherit; font-weight:700';
+        box.appendChild(a);
+    }
+}
+
+async function rpSave() {
+    if (!rpPos) { rpMsg('먼저 지도를 클릭해 위치를 찍으세요.', false); return; }
+
+    $('rp2-save').disabled = true;
+    rpMsg('올리는 중…', true);
+
+    let res;
+    try {
+        res = await fetch('/api/report?'
+            + `lat=${rpPos.getLat()}&lng=${rpPos.getLng()}`
+            + `&radiusM=${$('rp2-radius').value}`
+            + `&severity=${encodeURIComponent(rpSeverity())}`
+            + `&type=${encodeURIComponent($('rp2-type').value)}`
+            + `&description=${encodeURIComponent($('rp2-desc').value)}`,
+            { method: 'POST' }).then(r => r.json());
+    } catch (e) {
+        rpMsg('서버에 연결하지 못했습니다. 찍어둔 위치는 그대로입니다.', false);
+        $('rp2-save').disabled = false;
+        return;
+    }
+
+    if (!res.ok) {
+        rpMsg(res.message || '올리지 못했습니다.', false);
+        $('rp2-save').disabled = false;
+        return;
+    }
+
+    /*
+      ★ '올렸다' 와 '경로에 반영됐다' 는 다르다.
+      주변에 보도가 없으면 막을 구간이 없어 조용히 아무것도 안 막는다 —
+      그것도 성공으로 말하면 사용자는 반영된 줄 안다.
+    */
+    if (res.segmentCount === 0 && rpSeverity() !== '낮음') {
+        rpMsg('올렸습니다. 다만 주변에 보도가 없어 경로에는 반영되지 않았습니다.', false);
+    } else {
+        rpMsg('제보해 주셔서 감사합니다. 바로 반영됐습니다.', true);
+    }
+
+    rpSetPos(null);
+    $('rp2-desc').value = '';
+    loadReports();          // 지도의 제보 점을 새로 받는다
+}
+
+/* ── 저장된 장소 (집 / 회사) ──────────────────────────────────
+
+   지도 왼쪽 위 바로가기 버튼이 여는 창이다. 버튼 자체는 8/9부터 있었지만
+   저장할 자리가 없어서 '로그인 기능이 붙은 뒤에' 라는 안내만 띄우고 있었다.
+
+   ★ 이 화면이 다루는 것은 주소가 아니라 좌표다.
+     카카오 우편번호 API 는 좌표를 주지 않는다(address·zonecode 뿐).
+     저장용 좌표는 서버가 만든다 — REST 키가 브라우저에 나오면 안 되고,
+     화면이 보낸 좌표를 믿으면 '안내 지역 밖' 검사가 무의미해진다.
+     여기서 만드는 좌표는 오직 미리보기용이다.
+
+   ★ 등록한 집·회사를 고치거나 지우는 길은 이 화면에 없다. 일부러 없다 —
+     등록돼 있으면 창을 아예 띄우지 않기 때문이다(openPlace 참고).
+     수정·삭제는 마이페이지가 생기면 거기서 한다. 서버에는 DELETE /api/places/{id} 가
+     이미 있고 부르는 데만 없는 상태이므로, 그때 화면만 붙이면 된다.
+     수정은 별도 API 가 아니라 등록과 같은 POST /api/places 다(UPSERT).
+
+   ★ 화면에 붙은 것은 집·회사 둘이다(2026-08-23 회사 추가).
+     '자주가는 경로'는 장소가 아니라 출발+도착 한 쌍이라 USER_PLACES 로는 담기지 않는다 —
+     그건 별도 표가 생긴 뒤의 일이다.
+   ------------------------------------------------------------------ */
+
+/**
+ * 바로가기 버튼의 data-place → 서버의 PLACE_TYPE 과 화면에 쓸 이름.
+ *
+ * ★ 집·회사 둘 다 연다. 등록·수정·미리보기·저장이 전부 이 kind 값 하나로만 갈리므로
+ *   종류를 늘리는 데 다른 곳을 고칠 것이 없다(2026-08-23 회사 추가, 실제로 이 줄만 늘렸다).
+ *
+ * ★ 'fav'(자주가는 경로)는 여기 없다. 없어서 잠긴 것이 아니라 <b>담을 표가 없다</b> —
+ *   장소 한 곳이 아니라 출발+도착 한 쌍이라 USER_PLACES 의 행 하나로 안 들어간다.
+ *   여기에 한 줄 늘려도 저장에서 깨진다. openPlace 가 '준비 중' 으로 받아낸다.
+ */
+const PLACE_KINDS = {
+    home: { type: 'HOME', name: '집' },
+    work: { type: 'WORK', name: '회사' }
+};
+
+/** 지금 창이 다루고 있는 종류. 닫히면 null 이다. */
+let placeKind = null;
+
+/** 이미 등록돼 있던 것. 없으면 null. 지우기·출발 버튼이 이 값을 본다. */
+let placeSaved = null;
+
+/**
+ * 서버로 보낼 <b>원문</b> 주소. 화면의 칸에는 우편번호가 붙은 표시용 문자열이 들어간다.
+ *
+ * ★ 처음에는 "합쳐 보내면 주소검색이 0건을 낸다"고 적어뒀는데 재보니 틀렸다 —
+ *   2026-08-21 청주 도로명·지번 8가지로 재봤더니 괄호를 붙여도, 뒤에 호수를 붙여도
+ *   전부 같은 좌표가 나왔다. 그래도 따로 들고 있는 이유는 우편번호만 따로 쓸 일이 있고
+ *   좌표에 보태는 것이 없어서지, 합치면 깨지기 때문이 아니다.
+ */
+let placeAddress = '';
+let placeZonecode = '';
+
+/** 미리보기 지도. 창을 처음 열 때 한 번만 만든다. */
+let placeMap = null;
+let placeMarker = null;
+
+function wirePlaces() {
+    document.querySelectorAll('.shortcut').forEach(btn => {
+        btn.addEventListener('click', () => openPlace(btn.dataset.place));
+    });
+
+    $('place-backdrop').addEventListener('click', closePlace);
+    $('place-close').addEventListener('click', closePlace);
+    $('place-find').addEventListener('click', findAddress);
+    $('place-form').addEventListener('submit', savePlace);
+
+    // 창이 떠 있을 때만 Esc 로 닫는다. 항상 걸어두면 다른 화면의 Esc 를 가로챈다.
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && placeKind) {
+            closePlace();
+        }
+    });
+}
+
+/**
+ * 바로가기 버튼을 눌렀을 때.
+ *
+ * <b>등록된 주소가 있으면 창을 띄우지 않는다.</b> 곧바로 출발지에 넣고 끝이다 —
+ * 집 버튼을 누르는 이유는 거의 언제나 '집에서 출발하려고' 라서, 창이 한 번 더 뜨면
+ * 매번 닫는 동작이 하나 붙는다.
+ *
+ * 창은 <b>등록할 것이 없을 때</b>만 뜬다. 두 가지 경우다.
+ *   · 아직 한 번도 등록하지 않았다
+ *   · 등록은 돼 있는데 지금 안내 중인 지역 밖이라 출발지로 쓸 수 없다
+ *     (region-id 를 갈아탄 경우다. 이때는 다시 등록할 길이 있어야 한다)
+ */
+async function openPlace(key) {
+    const kind = PLACE_KINDS[key];
+    if (!kind) {
+        // 지금 여기로 오는 것은 '자주가는 경로' 뿐이다 — 장소 한 곳이 아니라 출발+도착
+        // 한 쌍이라 USER_PLACES 에 담기지 않는다. 표가 생기기 전에는 열 수 없다.
+        const btn = document.querySelector(`.shortcut[data-place="${key}"]`);
+        setStatus(`'${btn ? btn.textContent.trim() : key}' 은(는) 아직 준비 중입니다.`);
+        return;
+    }
+
+    if (!loginId) {
+        setStatus(`${kind.name} 주소는 로그인한 뒤에 등록할 수 있습니다.`, 'fail');
+        return;
+    }
+
+    // ★ 창을 띄우기 전에 먼저 물어본다. 띄워놓고 지우면 한 번 깜빡인다.
+    let place = null;
+    try {
+        const res = await fetch('/api/places/' + kind.type);
+
+        if (res.status === 401) {
+            // config 를 받은 뒤에 세션이 끊긴 경우다. 화면의 loginId 만 믿으면 여기서 어긋난다.
+            loginId = '';
+            setStatus('로그인이 풀렸습니다. 다시 로그인해 주세요.', 'fail');
+            return;
+        }
+
+        const data = await res.json();
+        if (data.ok) {
+            place = data.place;                // 등록 전이면 null 이다 — 오류가 아니다
+        }
+
+    } catch {
+        // 서버가 안 되면 등록도 안 된다. 창을 열어봐야 [등록하기] 에서 다시 막힌다.
+        setStatus(`${kind.name} 주소를 확인하지 못했습니다. 잠시 후 다시 눌러 주세요.`, 'fail');
+        return;
+    }
+
+    if (place && place.usable) {
+        applyPlaceAsStart(place);
+        setStatus(`출발지를 ${josa(place.label, '으로')} 정했습니다.`, 'ok');
+        return;                                // ★ 창을 띄우지 않는다
+    }
+
+    openPlaceForm(kind, place);
+}
+
+/**
+ * 등록 창을 연다.
+ *
+ * @param outOfRegion 등록은 돼 있으나 안내 지역 밖인 것. 없으면 {@code null}.
+ *                    <b>지우지 않고 채워서 보여준다</b> — 사용자는 자기가 뭘 넣어뒀는지
+ *                    알아야 다시 고를지 판단할 수 있고, 지역이 되돌아오면 그대로 살아난다
+ */
+function openPlaceForm(kind, outOfRegion) {
+    placeKind = kind;
+    placeSaved = outOfRegion;
+    placeAddress = outOfRegion ? outOfRegion.address : '';
+    placeZonecode = (outOfRegion && outOfRegion.zonecode) ? outOfRegion.zonecode : '';
+
+    $('place-title').textContent = kind.name + ' 주소 설정';
+    $('place-addr').value = placeAddress ? displayAddress(placeAddress, placeZonecode) : '';
+    $('place-detail').value = (outOfRegion && outOfRegion.addressDetail) || '';
+    $('place-submit').disabled = false;
+    placeMsg('');
+    placePreview(null);
+
+    $('place-modal').hidden = false;
+
+    // 지도는 창이 보이게 된 뒤에 만든다. 숨겨진 칸에서 만들면 카카오가 크기를 0 으로 잡고
+    // 그 뒤에 붙인 마커를 하나도 안 그린다(같은 함정을 initMap 에서 한 번 겪었다).
+    initPlaceMap();
+
+    if (outOfRegion) {
+        placePreview({ lat: Number(outOfRegion.latitude), lng: Number(outOfRegion.longitude) });
+        // 등록이 지워진 게 아니라 지금 그 지역을 안내하지 않는 것이다. 그렇게 말해야
+        // 사용자가 '왜 사라졌지' 하고 헤매지 않는다.
+        placeMsg(`등록된 주소가 지금 안내 중인 지역 밖입니다.
+다른 주소로 다시 등록하시면 출발지로 쓸 수 있습니다.`);
+    }
+}
+
+/** 화면에 보여줄 문자열. <b>이 값을 서버로 보내지 말 것.</b> */
+function displayAddress(address, zonecode) {
+    return zonecode ? '(' + zonecode + ') ' + address : address;
+}
+
+function closePlace() {
+    $('place-modal').hidden = true;
+    placeKind = null;
+}
+
+/**
+ * 카카오(다음) 우편번호 찾기.
+ *
+ * 주소 칸을 읽기 전용으로 둔 이유가 여기 있다 — 손으로 고친 주소는 좌표 변환에서
+ * 자주 0건이 되고, 그 증상이 '그런 주소가 없다' 와 구분되지 않는다.
+ */
+function findAddress() {
+    if (typeof daum === 'undefined' || !daum.Postcode) {
+        placeMsg('주소 찾기를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
+        return;
+    }
+
+    new daum.Postcode({
+        oncomplete: (data) => {
+            // data.address 는 사용자가 고른 형태(도로명 또는 지번)의 주소다. 그대로 쓴다.
+            placeAddress = data.address;
+            placeZonecode = data.zonecode || '';
+
+            $('place-addr').value = displayAddress(placeAddress, placeZonecode);
+            $('place-detail').focus();
+            placeMsg('');
+
+            previewAddress(placeAddress);
+        }
+    }).open();
+}
+
+/**
+ * 고른 주소를 미리보기 지도에 찍는다.
+ *
+ * ★ 여기서 나온 좌표는 저장하지 않는다. 저장용 좌표는 서버가 같은 카카오 주소검색으로
+ *   다시 만든다 — 화면이 보낸 좌표를 믿으면 '안내 지역 밖' 검사를 아무 값으로나 통과시킬 수 있다.
+ *   같은 API 라 값도 같지만, 믿을 근거는 '같은 API' 가 아니라 '서버가 직접 구했다' 여야 한다.
+ */
+function previewAddress(address) {
+    if (!window.kakao || !kakao.maps || !kakao.maps.services) {
+        return;
+    }
+    new kakao.maps.services.Geocoder().addressSearch(address, (result, status) => {
+        if (status !== kakao.maps.services.Status.OK || !result.length) {
+            placePreview(null, '이 주소의 위치를 미리 보여드리지 못했습니다.');
+            return;
+        }
+        // ★ x 가 경도, y 가 위도다. 뒤집으면 태평양으로 간다.
+        placePreview({ lat: Number(result[0].y), lng: Number(result[0].x) });
+    });
+}
+
+function initPlaceMap() {
+    if (placeMap) {
+        placeMap.relayout();
+        return;
+    }
+    if (!window.kakao || !kakao.maps) {
+        return;
+    }
+    const c = initialCenter();
+    placeMap = new kakao.maps.Map($('place-map'), {
+        center: new kakao.maps.LatLng(c[0], c[1]),
+        level: 4,
+        draggable: false          // 보여주는 칸이지 조작하는 칸이 아니다
+    });
+    placeMap.setZoomable(false);
+}
+
+/** 미리보기에 점 하나를 찍는다. point 가 null 이면 지운다. */
+function placePreview(point, note) {
+    if (placeMarker) {
+        placeMarker.setMap(null);
+        placeMarker = null;
+    }
+
+    const el = $('place-preview-note');
+    if (!point) {
+        el.textContent = note || '주소를 고르면 여기에 위치가 표시됩니다.';
+        return;
+    }
+
+    el.textContent = '이 위치가 맞는지 확인해 주세요.';
+
+    if (!placeMap) {
+        return;
+    }
+    const at = new kakao.maps.LatLng(point.lat, point.lng);
+    placeMarker = placePin(at, placeKind ? placeKind.name : '', '#e08d43');
+    placeMarker.setMap(placeMap);
+    placeMap.relayout();
+    placeMap.setCenter(at);
+    placeMap.setLevel(3);
+}
+
+/** 등록·변경. 좌표는 보내지 않는다 — 서버가 주소로 직접 구한다. */
+async function savePlace(e) {
+    e.preventDefault();
+
+    if (!placeAddress) {
+        placeMsg('[주소 찾기] 를 눌러 주소를 골라 주세요.');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('placeType', placeKind.type);
+    body.set('address', placeAddress);          // ★ 우편번호를 붙이지 않은 원문
+    body.set('detail', $('place-detail').value.trim());
+    body.set('zonecode', placeZonecode);
+    // label 은 보내지 않는다. 집·회사는 서버가 이름을 정한다(UserPlaceService.defaultLabel).
+
+    const btn = $('place-submit');
+    const changed = !!placeSaved;
+    btn.disabled = true;
+    placeMsg('');
+
+    try {
+        const res = await fetch('/api/places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+            // 서버가 400(고칠 수 있음) / 503(못 고침) / 401 을 구분해서 사유를 준다.
+            placeMsg(data.message || '등록하지 못했습니다.');
+            btn.disabled = false;
+            return;
+        }
+
+        // 등록하자마자 출발지로 넣는다. 이 창을 여는 이유가 결국 그것이다 —
+        // 등록만 되고 아무 일도 안 일어나면 사용자가 한 번 더 눌러야 한다.
+        const label = data.place.label;
+        applyPlaceAsStart(data.place);
+        closePlace();
+        setStatus((changed ? '주소를 변경했습니다' : josa(label, '을') + ' 등록했습니다')
+            + '. 출발지로 넣었습니다.', 'ok');
+
+    } catch {
+        placeMsg('서버에 연결하지 못했습니다.');
+        btn.disabled = false;
+    }
+}
+
+/**
+ * 출발지 칸에 넣는다.
+ *
+ * setPlace 를 그대로 쓴다 — 핀 그리기, 정류장까지 다시 재기, 탈 정류장 후보 갱신이
+ * 전부 거기 묶여 있다. 여기서 따로 하면 버스 탭에서만 어긋난다.
+ */
+function applyPlaceAsStart(place) {
+    const lat = Number(place.latitude), lng = Number(place.longitude);
+
+    setPlace('start', { name: place.label, lat, lng });
+
+    /*
+      ★ 지도를 그 자리로 옮긴다. 칸만 채우면 핀이 화면 밖에 찍혀서
+      <b>'눌렀는데 아무 일도 안 일어난' 것처럼</b> 보인다.
+
+      지도 탭과 버스 탭이 지도 하나를 같이 쓰므로 여기 한 번이면 양쪽에 다 걸린다.
+      버스 탭에서는 idle 이 걸려 화면 안 정류장도 새 자리 기준으로 다시 그려진다.
+
+      ★ 도착지가 이미 있으면 옮기지 않는다. 바로 아래 maybeRoute 가 경로를 그리고
+      setBounds 로 경로 전체를 담는데, 먼저 옮겨두면 <b>화면이 두 번 튄다.</b>
+      경로 범위에는 어차피 이 자리가 들어 있다.
+
+      배율은 너무 넓게 보고 있을 때만 당긴다 — runSearch·focusPlace 와 같은 규칙이다.
+      항상 맞추면 사용자가 일부러 맞춰둔 배율을 빼앗는다.
+    */
+    if (!picked.end) {
+        // 배율을 먼저 맞추고 옮긴다. 순서가 반대면 배율이 바뀌면서 중심이 다시 잡혀
+        // 수십 m 어긋난다(level 8 에서 누르면 36m 밀렸다).
+        if (map.getLevel() > 5) map.setLevel(4);
+        map.setCenter(new kakao.maps.LatLng(lat, lng));
+    }
+
+    maybeRoute();
+}
+
+/** 창 안의 안내 줄. 빈 문자열이면 감춘다. */
+function placeMsg(text, ok) {
+    const el = $('place-msg');
+    el.textContent = text;
+    el.hidden = !text;
+    el.classList.toggle('ok', !!ok);
+}

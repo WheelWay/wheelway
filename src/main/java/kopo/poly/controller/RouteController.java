@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,9 +23,11 @@ import kopo.poly.dto.ManualEdgeDTO;
 import kopo.poly.dto.RouteResultDTO;
 import kopo.poly.graph.BlockedEdges;
 import kopo.poly.graph.GraphHolder;
+import kopo.poly.graph.ManualEdges;
 import kopo.poly.graph.RouteGraph;
 import kopo.poly.mapper.IGraphMapper;
 import kopo.poly.service.IRouteService;
+import kopo.poly.util.CmmUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -263,9 +266,10 @@ public class RouteController {
      * 저장 후 그래프를 통째로 다시 만든다 — 엣지가 바뀌면 인접리스트·연결 덩어리가 전부 달라져서
      * 부분 갱신으로는 맞출 수 없다.
      *
-     * @param action {@code 추가} / {@code 추가-고정} / {@code 삭제}.
-     *               {@code 추가-고정} 은 스냅 없이 찍은 자리 그대로 노드를 만든다
-     * @param kind   추가일 때 가중치 표의 키. 비우면 {@code crossing}
+     * @param action {@code 추가} / {@code 추가-고정} / {@code 노드} / {@code 삭제}.
+     *               {@code 추가-고정} 은 스냅 없이 찍은 자리 그대로 노드를 만들고,
+     *               {@code 노드} 는 엣지 없이 그 노드 하나만 놓는다({@code to} 는 {@code from} 과 같게 받는다)
+     * @param kind   추가일 때 가중치 표의 키. 비우면 {@code crossing}. {@code 노드} 는 안 쓴다
      */
     @PostMapping("/manual-edge")
     public Map<String, Object> addManualEdge(@RequestParam String action,
@@ -275,9 +279,9 @@ public class RouteController {
                                              @RequestParam(required = false) String note) {
 
         if (!ManualEdgeDTO.ADD.equals(action) && !ManualEdgeDTO.ADD_EXACT.equals(action)
-                && !ManualEdgeDTO.REMOVE.equals(action)) {
+                && !ManualEdgeDTO.NODE.equals(action) && !ManualEdgeDTO.REMOVE.equals(action)) {
             return Map.of("ok", false,
-                    "message", "action 은 '추가', '추가-고정', '삭제' 중 하나여야 합니다.");
+                    "message", "action 은 '추가', '추가-고정', '노드', '삭제' 중 하나여야 합니다.");
         }
 
         ManualEdgeDTO dto = new ManualEdgeDTO();
@@ -287,24 +291,112 @@ public class RouteController {
         dto.setFromLng(fromLng);
         dto.setToLat(toLat);
         dto.setToLng(toLng);
-        dto.setEdgeKind(kind == null || kind.isBlank() ? null : kind);
+        // 노드는 종류가 없다. 받아도 버린다 — 남겨두면 나중에 '그때 뭘로 찍었더라' 를 묻게 된다.
+        dto.setEdgeKind(ManualEdgeDTO.NODE.equals(action) || kind == null || kind.isBlank()
+                ? null : kind);
         dto.setNote(note == null || note.isBlank() ? null : note);
 
         graphMapper.insertManualEdge(dto);
         log.info("수동 엣지 {} 등록 #{}", action, dto.getId());
 
-        return withReload(Map.of("ok", true, "id", dto.getId()));
+        return withReload(Map.of("ok", true, "id", dto.getId()), dto.getId());
     }
 
-    /** 수동 엣지 하나를 되돌린다(기록 자체를 지운다). */
+    /**
+     * 여러 건을 <b>한 번에</b> 저장한다.
+     *
+     * <p><b>왜 필요한가</b>: 한 건씩 저장하면 건마다 {@link GraphHolder#load()} 가 돌아
+     * 그래프를 통째로 다시 만든다(청주 기준 3.4초). 없는 보도를 열 구간 그리면 34초를
+     * 기다리게 된다. 여기서는 전부 넣고 <b>마지막에 한 번만</b> 다시 만든다.
+     *
+     * <p>기록은 넣은 순서대로 ID 가 매겨진다. {@code ManualEdges} 가 ID 내림차순으로 적용하므로
+     * 나중에 그린 것이 먼저 적용되는데, 이어그리기는 좌표가 같은 자리에서 만나 노드를
+     * 다시 쓰므로(REUSE_M) 순서와 무관하게 이어진다.
+     *
+     * <p>하나라도 action 이 이상하면 <b>아무것도 저장하지 않는다.</b> 절반만 들어가면
+     * 사용자가 무엇이 들어갔는지 알 수 없다.
+     */
+    @PostMapping("/manual-edge/batch")
+    public Map<String, Object> addManualEdges(@RequestBody List<ManualEdgeDTO> items) {
+
+        if (items == null || items.isEmpty()) {
+            return Map.of("ok", false, "message", "저장할 것이 없습니다.");
+        }
+
+        for (ManualEdgeDTO m : items) {
+            String action = CmmUtil.nvl(m.getAction());
+            if (!ManualEdgeDTO.ADD.equals(action) && !ManualEdgeDTO.ADD_EXACT.equals(action)
+                    && !ManualEdgeDTO.NODE.equals(action) && !ManualEdgeDTO.REMOVE.equals(action)) {
+                return Map.of("ok", false,
+                        "message", "action 은 '추가', '추가-고정', '노드', '삭제' 중 하나여야 합니다: " + action);
+            }
+        }
+
+        List<Long> ids = new ArrayList<>(items.size());
+        for (ManualEdgeDTO m : items) {
+            m.setRegionId(graphHolder.getRegionId());
+            // 노드는 종류가 없다. 단건 저장과 같은 규칙이다.
+            if (ManualEdgeDTO.NODE.equals(m.getAction())
+                    || m.getEdgeKind() == null || m.getEdgeKind().isBlank()) {
+                m.setEdgeKind(null);
+            }
+            graphMapper.insertManualEdge(m);
+            ids.add(m.getId());
+        }
+        log.info("수동 엣지 {}건 일괄 등록 {}", ids.size(), ids);
+
+        return withReload(Map.of("ok", true, "ids", ids, "saved", ids.size()), ids);
+    }
+
+    /**
+     * 수동 엣지 기록을 <b>여러 개 한 번에</b> 지운다.
+     *
+     * <p>한 건씩 지우면 건마다 그래프를 통째로 다시 만든다(청주 3.4초). 목록에서 여덟 개를
+     * 골라 지우면 30초를 기다리게 된다. 여기서는 전부 지우고 <b>마지막에 한 번만</b> 만든다.
+     *
+     * <p>없는 ID 가 섞여 있어도 막지 않는다 — 화면 목록이 잠깐 낡았을 수 있고,
+     * '이미 없다' 는 <b>지워달라는 요청의 목적이 이미 이뤄진 상태</b>다. 몇 건이 실제로
+     * 지워졌는지를 {@code deleted} 로 돌려주고 화면이 그것을 말한다.
+     */
+    @DeleteMapping("/manual-edge")
+    public Map<String, Object> removeManualEdges(@RequestParam List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of("ok", false, "message", "지울 것을 고르세요.");
+        }
+
+        int deleted = 0;
+        for (long id : ids) {
+            deleted += graphMapper.deleteManualEdge(id, graphHolder.getRegionId());
+        }
+        log.info("수동 엣지 기록 {}건 삭제 요청 → {}건 지움 {}", ids.size(), deleted, ids);
+
+        return withReload(Map.of("ok", true, "deleted", deleted, "asked", ids.size()));
+    }
+
+    /**
+     * 수동 엣지 기록 하나를 지운다.
+     *
+     * <p>지우는 것은 {@code MANUAL_EDGES} 의 <b>행</b>이다. 그래프는 그 기록이 없는 상태로
+     * 다시 만들어지므로, 추가 기록을 지우면 그 엣지가 사라지고 <b>삭제 기록을 지우면
+     * 그 엣지가 되살아난다.</b>
+     */
     @DeleteMapping("/manual-edge/{id}")
     public Map<String, Object> removeManualEdge(@PathVariable long id) {
         int n = graphMapper.deleteManualEdge(id, graphHolder.getRegionId());
         if (n == 0) {
             return Map.of("ok", false, "message", "ID " + id + " 를 찾지 못했습니다.");
         }
-        log.info("수동 엣지 #{} 되돌림", id);
+        log.info("수동 엣지 기록 #{} 삭제", id);
         return withReload(Map.of("ok", true));
+    }
+
+    private Map<String, Object> withReload(Map<String, Object> base) {
+        return withReload(base, java.util.List.of());
+    }
+
+    private Map<String, Object> withReload(Map<String, Object> base, Long justSavedId) {
+        return withReload(base, justSavedId == null ? java.util.List.<Long>of()
+                : java.util.List.of(justSavedId));
     }
 
     /**
@@ -313,17 +405,38 @@ public class RouteController {
      * <p>실패를 같이 주는 이유: 저장은 성공했는데 그래프에는 안 들어가는 경우가 실제로 있다.
      * 이미 지운 엣지를 또 지우려 했거나, 좌표가 그래프에서 멀 때다.
      * 엣지 수만 보여주면 사용자는 성공한 줄 알고 넘어간다.
+     *
+     * <p><b>★ 방금 저장한 것과 예전 기록을 갈라서 준다.</b> 저장할 때마다 그래프를 통째로
+     * 다시 만들면서 <b>MANUAL_EDGES 전부를 다시 적용</b>하므로, {@code failed} 에는 예전 기록의
+     * 실패까지 섞여 들어온다. 실제로 그런 기록이 하나 있었다 — 같은 삭제가 두 번 저장돼서
+     * 뒤엣것이 <b>영원히</b> 실패했고, 그 하나 때문에 <b>그 뒤의 모든 저장이 빨간 실패로
+     * 보였다.</b> 관리자는 자기가 방금 한 일이 안 먹은 줄 알고 같은 작업을 반복하게 된다.
+     *
+     * @param justSavedIds 방금 저장한 기록의 ID 들. 비어 있으면 판정하지 않는다
      */
-    private Map<String, Object> withReload(Map<String, Object> base) {
+    private Map<String, Object> withReload(Map<String, Object> base, List<Long> justSavedIds) {
         int beforeEdges = graphHolder.getGraph().edgeCount();
+        int beforeNodes = graphHolder.getGraph().nodeCount();
         graphHolder.load();
+
+        ManualEdges.Result manual = graphHolder.getLastManual();
 
         Map<String, Object> out = new java.util.HashMap<>(base);
         out.put("edgeBefore", beforeEdges);
         out.put("edgeAfter", graphHolder.getGraph().edgeCount());
+
+        // 노드만 놓으면 엣지 수가 안 바뀐다. 노드 수까지 줘야 화면이 '아무 일도 안 일어났다' 고
+        // 말하지 않는다 - 예전에 그런 오해를 부르는 문구를 실제로 띄우고 있었다.
+        out.put("nodeBefore", beforeNodes);
+        out.put("nodeAfter", graphHolder.getGraph().nodeCount());
         out.put("blocked", blockedEdges.size());
-        out.put("failed", graphHolder.getLastManual().failed());
-        out.put("problems", graphHolder.getLastManual().problems());
+        out.put("failed", manual.failed());
+        out.put("problems", manual.problems());
+
+        // 방금 저장한 것들이 반영됐는가. 예전 기록의 실패와 섞이지 않는다.
+        long failedNow = justSavedIds.stream().filter(manual::failedFor).count();
+        out.put("appliedNow", failedNow == 0);
+        out.put("failedNow", failedNow);
         return out;
     }
 
