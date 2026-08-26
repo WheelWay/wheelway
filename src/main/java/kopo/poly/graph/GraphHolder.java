@@ -70,6 +70,16 @@ public class GraphHolder {
     private double highwayWeightDefault;
 
     /**
+     * 출발·도착을 그래프에 붙일 때 <b>보도 노드를 이만큼 더 멀어도 먼저</b> 잡는다(m).
+     *
+     * <p>가중치와 다른 문제를 푼다. 가중치는 '어느 길로 갈까' 이고 이 값은
+     * '어디서 시작하고 어디서 끝낼까' 다 — 보도를 아무리 싸게 만들어도
+     * 끝점이 차도 중심선이면 경로는 차도에서 끝난다.
+     */
+    @Value("${wheelway.snap-prefer-walk-m:20}")
+    private double snapPreferWalkM;
+
+    /**
      * 교차로에서 이 거리 안에 있는 보도 노드를 이어준다. {@code 0} 이면 기능을 끈다.
      * {@link SidewalkConnector} 참고 — 보도를 새로 그리는 게 아니라 있는 보도에 문만 단다.
      */
@@ -124,7 +134,20 @@ public class GraphHolder {
         // 교차로와 '이미 그려진' 보도를 잇는다. DB 에는 쓰지 않고 메모리 그래프에만 더한다 —
         // 원본 OSM 적재를 건드리지 않아야 재적재해도 같은 결과가 나온다.
         if (connectorMaxM > 0) {
-            long nextId = -1L - mr.added();
+            /*
+             * ★ 수동 반영이 <b>실제로 마지막에 쓴 ID</b> 다음부터 이어 쓴다.
+             *
+             * 예전에는 -1 - added 로 계산했는데, 그 카운터는 추가한 엣지만 세는 값이다.
+             * 같은 카운터를 새 노드(freeNode·분할 노드)와 분할로 생긴 반쪽 엣지 4개도
+             * 같이 쓰므로, added 만 빼면 <b>이미 나눠준 ID 를 연결 엣지에 다시 준다.</b>
+             * (2026-08-26 실측: 청주 수동 219건 기준 연결 엣지 100개가 수동 엣지와 같은 ID 였다.)
+             *
+             * ID 가 겹치면 두 가지가 조용히 깨진다.
+             *   - 화면이 수동 엣지를 감출 때(addedEdgeIds) 같은 ID 의 연결 엣지까지 사라진다
+             *   - 차단 Set 이 ID 로 도니까, 제보 하나가 연결 엣지를 막으면
+             *     <b>손으로 그린 보도가 같이 막힌다</b> — 경로는 그 보도를 두고 차도로 돈다
+             */
+            long nextId = mr.nextId();
             // 사람이 직접 찍은 노드는 빼고 잇는다. 손으로 그린 보도를 옆 도로가 자동으로
             // 물어가면 '잇지도 않은 도보와 차도가 이어진' 그래프가 된다.
             List<EdgeDTO> links = SidewalkConnector.build(nodes, edges, connectorMaxM, nextId,
@@ -152,11 +175,12 @@ public class GraphHolder {
             mr.problems().forEach(s -> log.warn("수동 엣지: {}", s));
         }
 
-        graph = RouteGraph.build(regionId, nodes, edges, this::weightOf);
+        graph = RouteGraph.build(regionId, nodes, edges, this::weightOf, snapPreferWalkM);
 
         log.info("그래프 로드 region={} 노드={} 엣지={} ({}ms)",
                 regionId, graph.nodeCount(), graph.edgeCount(), System.currentTimeMillis() - begin);
         log.info("도로종류 가중치 {} (표에 없으면 {})", highwayWeights, highwayWeightDefault);
+        log.info("스냅 보도 우대 {}m", snapPreferWalkM);
 
         if (graph.nodeCount() == 0) {
             log.warn("region='{}' 에 노드가 없습니다. OsmGraphLoader 로 적재하지 않았거나 region-id 가 다릅니다.", regionId);

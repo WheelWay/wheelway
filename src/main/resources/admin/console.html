@@ -221,9 +221,27 @@
     <div class="hint">
         지오코딩 좌표가 필지 중심에 찍혀 실제 보도와 어긋난 것을 바로잡는 화면입니다.<br>
         <!-- 여기서 고친 것이 사용자에게 어떻게 보이는지 바로 확인하도록 사용자 화면으로 보낸다.
-             네이버 화면은 지오코딩 비교용 잔재라 링크를 뺐다. -->
-        <a href="/map.html" target="_blank">이동경로 화면 ↗</a>
+             네이버 화면은 지오코딩 비교용 잔재라 링크를 뺐다.
+
+             ★ target="_blank" 였다. 관리자 화면은 지도에서 들어와서 고치고 다시 지도로
+               나가는 왕복이라, 나갈 때마다 탭이 하나씩 쌓였다. 같은 탭에서 넘어간다.
+               ↗ 도 같이 뺐다 - 새 탭으로 열린다는 표시라 이제 맞지 않는다. -->
+        <a href="/map.html">이동경로 화면</a>
+        <!--
+          자리를 뜰 때 관리자 통행증을 버린다. 안 눌러도 30분 뒤 저절로 풀리지만,
+          공용 PC 에서 창만 닫고 가면 그 30분 동안 뒤에 앉는 사람이 그대로 들어온다.
+          로그인 세션은 건드리지 않는다 — 관리자 화면에서 나갈 뿐이다.
+        -->
+        · <a href="#" id="admin-lock">관리자 잠그기</a>
     </div>
+
+    <script>
+        document.getElementById('admin-lock').addEventListener('click', async event => {
+            event.preventDefault();
+            await fetch('/admin/lock', { method: 'POST' });
+            location.href = '/map.html';
+        });
+    </script>
 
     <div id="status" class="wait">지도를 불러오는 중…</div>
 

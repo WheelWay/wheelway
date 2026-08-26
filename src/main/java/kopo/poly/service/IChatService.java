@@ -19,6 +19,14 @@ import java.util.List;
  * </pre>
  * <b>숫자를 만드는 자리에 LLM 이 없다.</b> 그래서 환각이 들어올 자리가 없다.
  *
+ * <h3>어떻게 갈지는 우리가 정하지 않는다</h3>
+ * 말에서 수단이 드러나면(<i>버스타고 청주시청 가고싶어요</i>) 그 수단으로 안내하고,
+ * 드러나지 않으면(<i>청주시청으로 가주세요</i>) <b>도보로 단정하지 않고 되묻는다</b>
+ * ({@code Answer.needMode}). 짧은 거리는 그냥 걷는 것이 맞으므로 그때만 안 묻는다.
+ *
+ * <p>이것은 {@code TransitResultDTO} 가 '도보만' 안을 늘 같이 내는 것과 같은 판단이다 —
+ * 무엇을 고를지는 그 사람의 사정이 정하고, 우리는 고를 수 있게 놓아주기만 한다.
+ *
  * <h3>출발지</h3>
  * 화면이 이미 정해둔 출발지가 있으면 그것, 없으면 등록해둔 집, 둘 다 없으면 되묻는다.
  * 챗봇이 "집에서 출발" 을 기본 전제로 삼기 때문에 {@code USER_PLACES} 가 먼저 필요했다.
@@ -39,6 +47,15 @@ public interface IChatService {
      * @param minutes     예상 소요(분). 경로가 없으면 0
      * @param needStart   출발지를 정해달라고 되물어야 하는가.
      *                    화면이 '현재위치로 할까요' 를 띄울지 판단한다
+     * @param mode        어떻게 가는 안인가. {@code WALK} · {@code BUS} · {@code TAXI} ·
+     *                    {@code UNKNOWN}. 화면이 어느 탭으로 갈지 이걸로 정한다
+     * @param needMode    수단을 골라달라고 되물어야 하는가. <b>{@code needStart} 와 같은 뜻이다</b> —
+     *                    우리가 정할 수 없으니 화면이 물어보라는 표시다.
+     *                    <p>이때도 <b>도보 경로를 같이 담아 보낸다.</b> 사용자가 [도보] 를 고르면
+     *                    화면이 그것을 그대로 그리면 되므로 서버를 다시 부르지 않는다 —
+     *                    되묻기 때문에 왕복이 한 번 더 늘면 되묻기가 손해가 된다.
+     *                    <p>단 도보가 막혀 있으면({@code path} 가 {@code null}) [도보] 는 낼 수 없다.
+     *                    그 판단은 {@code path} 를 보고 화면이 한다
      */
     record Answer(String answer,
                   String heard,
@@ -49,7 +66,9 @@ public interface IChatService {
                   List<double[]> path,
                   double distanceM,
                   int minutes,
-                  boolean needStart) {
+                  boolean needStart,
+                  String mode,
+                  boolean needMode) {
     }
 
     /**

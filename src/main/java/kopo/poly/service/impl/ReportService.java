@@ -60,7 +60,7 @@ public class ReportService implements IReportService {
     /**
      * 받을 유형. <b>화면의 &lt;select&gt; 와 반드시 같아야 한다</b> —
      * 화면에만 늘리면 서버가 "유형은 [...] 중 하나여야 합니다" 로 거절한다.
-     * 지금 목록을 쓰는 화면이 셋이다: map.html(제보 탭) · report.html · admin.html.
+     * 지금 목록을 쓰는 화면이 셋이다: map.html(제보 탭) · report.html · /admin(관리자 화면).
      */
     private static final Set<String> TYPES = Set.of("계단", "턱", "적치물", "공사", "기타");
 

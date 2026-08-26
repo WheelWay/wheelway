@@ -18,7 +18,10 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Gemini 로 목적지 이름을 뽑는다.
+ * Gemini 로 목적지 이름과 이동수단을 뽑는다.
+ *
+ * <p><b>둘을 한 번에 받는다.</b> 수단을 따로 물으면 호출이 두 배가 되고 RPM 15 에
+ * 그만큼 빨리 걸린다 — 스키마에 필드 하나를 더하면 끝나는 일이라 나눌 이유가 없다.
  *
  * <h3>키와 모델은 별개다</h3>
  * <pre>
@@ -135,7 +138,7 @@ public class GeminiClient implements ILlmClient {
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 너는 휠체어 이동경로 안내 서비스의 '목적지 해석기'다.
-                사용자가 한 말에서 가려는 곳의 이름 하나만 뽑아라.
+                사용자가 한 말에서 <가려는 곳>과 <어떻게 갈 것인지> 를 뽑아라.
 
                 규칙
                 - **사용자가 말한 이름을 그대로 쓰는 것이 원칙이다.**
@@ -151,7 +154,22 @@ public class GeminiClient implements ILlmClient {
                 - 안내 지역과 관계없는 곳이거나(예: 부산역) 목적지를 알 수 없으면
                   matched 를 false 로 하라. 억지로 고르지 마라.
                 - **거리·소요시간·경로·길 안내를 말하지 마라.** 그것은 네 일이 아니다.
-                  목적지 이름 하나만 답하면 된다.
+                  목적지 이름과 수단만 답하면 된다.
+
+                수단(mode) 규칙
+                - **말에 드러날 때만 정한다.** WALK · BUS · TAXI · UNKNOWN 중 하나다.
+                    '버스타고 청주시청 가고싶어요'    -> BUS
+                    '청주시청까지 걸어서 갈만한가요'  -> WALK
+                    '콜택시로 청주시청 가려고요'      -> TAXI
+                    '청주시청으로 가주세요'           -> UNKNOWN
+                    '청주시청 가는 길 알려줘'         -> UNKNOWN
+                - **모르면 반드시 UNKNOWN 이다.** 짐작해서 WALK 로 적지 마라.
+                  수단을 말하지 않는 것이 오히려 흔하고, 그때는 우리 화면이 되묻는다.
+                  네가 대신 골라주면 <버스로 갈 거리를 걸어가라고> 안내하게 된다.
+                - **★ 목적지 이름에 들어 있는 말은 수단이 아니다.**
+                    '버스터미널로 가주세요'  -> destination '버스터미널',  mode UNKNOWN
+                    '택시승강장 어디예요'    -> destination '택시승강장',  mode UNKNOWN
+                  '버스' 라는 글자가 있다고 BUS 가 아니다. 타겠다고 말했을 때만 BUS 다.
                 """);
 
         if (!candidates.isEmpty()) {
@@ -181,7 +199,19 @@ public class GeminiClient implements ILlmClient {
         ObjectNode props = schema.putObject("properties");
         props.putObject("destination").put("type", "STRING");
         props.putObject("matched").put("type", "BOOLEAN");
-        schema.putArray("required").add("destination").add("matched");
+
+        /*
+          ★ 값을 열거로 못박는다. 자유 문자열로 두면 '도보'·'walk'·'BUS(버스)' 가 섞여 오고,
+            그걸 받아 맞추는 코드가 곧 새로운 오류원이 된다. 스키마로 막으면 그 일이 없다.
+        */
+        ObjectNode mode = props.putObject("mode");
+        mode.put("type", "STRING");
+        ArrayNode modes = mode.putArray("enum");
+        for (Mode m : Mode.values()) {
+            modes.add(m.name());
+        }
+
+        schema.putArray("required").add("destination").add("matched").add("mode");
 
         return root.toString();
     }
@@ -209,11 +239,31 @@ public class GeminiClient implements ILlmClient {
 
         String destination = out.path("destination").asString();
         boolean matched = out.path("matched").asBoolean(false);
+        Mode mode = mode(out.path("mode").asString());
 
         // 스키마가 있어도 빈 문자열은 올 수 있다. 그건 못 찾은 것이다.
         if (destination == null || destination.isBlank()) {
-            return new Destination("", false);
+            return new Destination("", false, mode);
         }
-        return new Destination(destination.trim(), matched);
+        return new Destination(destination.trim(), matched, mode);
+    }
+
+    /**
+     * 수단 이름 → {@link Mode}. <b>모르는 값은 전부 {@link Mode#UNKNOWN} 이다.</b>
+     *
+     * <p>스키마로 열거를 못박았어도 여기서 한 번 더 받는다. 못 알아들은 값을 예외로 올리면
+     * 챗봇 전체가 멈추는데, 되묻기로 떨어지면 사용자는 버튼 하나를 더 누를 뿐이다 —
+     * <b>모르는 쪽이 안전한 자리</b>라 그렇게 맞춘다.
+     */
+    private static Mode mode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Mode.UNKNOWN;
+        }
+        try {
+            return Mode.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("길 안내 도우미가 모르는 수단을 냈습니다: '{}'", raw);
+            return Mode.UNKNOWN;
+        }
     }
 }

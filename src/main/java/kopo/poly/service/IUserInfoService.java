@@ -7,6 +7,8 @@ public interface IUserInfoService {
 
     UserInfoDTO searchUserIdOrPasswordProc(UserInfoDTO pDTO) throws Exception;
 
+    UserInfoDTO getMyInfo(UserInfoDTO pDTO) throws Exception;
+
     int newPasswordProc(UserInfoDTO pDTO) throws Exception;
 
     UserInfoDTO getUsernameExists(UserInfoDTO pDTO) throws Exception;

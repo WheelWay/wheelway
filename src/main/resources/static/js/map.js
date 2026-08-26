@@ -190,7 +190,7 @@ function initMap() {
 
     /*
       지도를 눌러 출발·도착을 찍는 기능은 여기에 두지 않는다.
-      좌표를 직접 집는 일은 수정 화면(admin.html)의 몫이고,
+      좌표를 직접 집는 일은 수정 화면(/admin)의 몫이고,
       사용자는 장소 이름으로만 정한다. 지도 클릭이 살아 있으면
       지도를 옮기려다 잘못 눌러 출발지가 바뀌는 일이 생긴다.
 
@@ -222,13 +222,16 @@ function initMap() {
 
       메인 화면(/main)의 [버스] 가 이 길로 들어온다 — 거기서 바로 버스 탭이 열려야
       '버스를 눌렀는데 도보 화면이 뜨는' 상태가 안 된다.
+      [마이페이지] 도 같은 길이다(?tab=my). 해시(#my)로 따로 만들려다 걷어냈는데,
+      이 줄이 <b>나중에 돌면서 무조건 다시 부르기</b> 때문에 앞에서 무엇을 켜두든 덮어쓴다 —
+      들어오는 길이 둘이면 반드시 한쪽이 진다.
 
       ★ 아는 이름만 받는다. 모르는 값을 그대로 넘기면 어느 패널도 안 켜져
       화면이 통째로 빈 채로 뜬다 — 주소를 손으로 고친 사람에게 고장으로 보인다.
       여기서 한 번은 반드시 불러야 패널 표시가 탭 상태와 어긋나지 않는다.
     */
     const want = new URLSearchParams(location.search).get('tab');
-    selectTab(['map', 'bus', 'taxi', 'report'].includes(want) ? want : 'map');
+    selectTab(['map', 'bus', 'taxi', 'report', 'my'].includes(want) ? want : 'map');
 
     // 지도를 사용자 동네로 옮긴다. 늦게 와도 되는 일이라 기다리지 않는다 —
     // 아무것도 못 받아도 화면은 안내 지역 한가운데에 떠 있으면 그만이다.
@@ -967,11 +970,23 @@ function syncRouteLine() {
 function selectTab(name) {
     activeTab = name;
 
+    /*
+      ★ 이름으로 거르던 것을 걷어냈다. MY 에 화면이 없던 동안에는 그것만 빼려고
+      목록을 적어뒀는데, 이제 다섯 칸 모두 진짜 탭이다. 목록을 남겨두면 탭이 늘 때마다
+      여기도 같이 고쳐야 하고, 잊으면 <b>눌리는데 색이 안 바뀌는</b> 칸이 생긴다.
+      (.rail-home / .rail-admin 은 <a> 라 이 선택자에 안 걸린다)
+    */
     document.querySelectorAll('.rail-tab[data-tab]').forEach(t => {
-        if (['map', 'bus', 'taxi', 'report'].includes(t.dataset.tab)) {
-            t.classList.toggle('is-active', t.dataset.tab === name);
-        }
+        t.classList.toggle('is-active', t.dataset.tab === name);
     });
+
+    /*
+      수정 화면은 MY 를 떠나면 닫는다. 지도 자리를 덮고 있어서, 남겨두면
+      버스 탭으로 옮겼는데 지도 대신 회원정보가 떠 있는 상태가 된다.
+    */
+    if (name !== 'my') {
+        closeMyEdit();
+    }
 
     renderPanes();
 }
@@ -987,6 +1002,7 @@ function renderPanes() {
     const bus = activeTab === 'bus';
     const taxi = activeTab === 'taxi';
     const report = activeTab === 'report';
+    const my = activeTab === 'my';
 
     /*
       ★ 택시 탭은 출발·도착 칸을 통째로 감춘다.
@@ -1003,8 +1019,16 @@ function renderPanes() {
       '지금 보고 있는 자리' 를 올리는 것이라 어디에서 어디로와 무관하다.
       남겨두면 그것부터 채워야 하는 줄 알고 검색하다 아무 일도 안 일어나는 것을 본다.
     */
-    $('io').hidden     = taxi || report;
-    $('status').hidden = taxi || report;
+    /*
+      마이페이지도 출발·도착 칸을 감춘다. 택시·제보와 같은 이유다 — 이 탭이 하는 일은
+      '내가 저장해둔 것' 을 보는 것이라 어디에서 어디로와 무관하다.
+
+      ★ 바로가기(집·회사)도 .io 안에 있어서 같이 사라진다. 그래야 맞다 —
+      바로 아래 목록에 집·회사 주소가 이미 적혀 있는데 같은 것을 누르는 버튼이
+      또 있으면, 어느 쪽이 '수정' 인지 알 수 없다.
+    */
+    $('io').hidden     = taxi || report || my;
+    $('status').hidden = taxi || report || my;
 
     /*
       ★ 도착지 칸은 어느 탭에서나 '도착지' 하나의 뜻이다.
@@ -1040,11 +1064,20 @@ function renderPanes() {
 
       최근경로는 그대로 둔다. 그건 '어디를 다녀왔나'라 탭과 상관이 없다.
     */
-    $('pane-route').hidden  = !hasRoute || bus || report;
-    $('pane-recent').hidden = taxi || report;
+    $('pane-route').hidden  = !hasRoute || bus || report || my;
+    $('pane-recent').hidden = taxi || report || my;
     $('pane-bus').hidden    = !bus;
     $('pane-report').hidden = !report;
     $('pane-taxi').hidden   = !(activeTab === 'taxi');
+    $('pane-my').hidden     = !my;
+
+    /*
+      ★ 탭을 열 때마다 다시 읽는다. 한 번만 읽고 두면 주소를 바꾸고 다른 탭에
+      다녀온 사이 옛 값이 그대로 남는다. 요청 둘이라 부담도 크지 않다.
+    */
+    if (my) {
+        loadMyInfo();
+    }
 
     // 목적지까지의 도보 선도 같은 이유로 버스 탭에서는 감춘다. syncRouteLine 참고.
     syncRouteLine();
@@ -2091,7 +2124,7 @@ function busPlanRow(p, i, t) {
         + `<span class="plan-kind">버스</span>`
         + `<span class="plan-time">${t.total}분</span>`
         + `<span class="plan-tail">${tail}</span></div>`
-        + `<div class="plan-sum">${escapeHtml(p.routeNo)}번 저상 · `
+        + `<div class="plan-sum"><b class="plan-no">${escapeHtml(p.routeNo)}번</b> 저상 · `
         + `${escapeHtml(p.board.stopName)} 에서 타서 ${escapeHtml(p.alight.stopName)} 에서 내림</div>`;
 
     const legs = document.createElement('div');
@@ -2099,7 +2132,8 @@ function busPlanRow(p, i, t) {
     legs.appendChild(planLeg('walk', `도보 ${w1}분`,
         `${escapeHtml(p.board.stopName)} 까지 · ${p.walk1.meters.toLocaleString()}m`));
     legs.appendChild(planLeg('bus', `버스 ${p.ride.minutes}분`,
-        `${escapeHtml(p.routeNo)}번 · ${p.ride.stopCount} 정거장 · ${p.ride.meters.toLocaleString()}m`));
+        `<b class="plan-no">${escapeHtml(p.routeNo)}번</b> · ${p.ride.stopCount} 정거장`
+        + ` · ${p.ride.meters.toLocaleString()}m`));
     legs.appendChild(planLeg('walk', `도보 ${w2}분`,
         `목적지까지 · ${p.walk2.meters.toLocaleString()}m`));
     row.appendChild(legs);
@@ -2117,13 +2151,11 @@ function busPlanRow(p, i, t) {
         row.appendChild(el);
     }
 
-    const src = rideSourceNote(p.ride.source);
-    if (src) {
-        const el = document.createElement('div');
-        el.className = 'plan-src';
-        el.textContent = src;
-        row.appendChild(el);
-    }
+    /*
+      ★ '이 값이 어디서 왔는지'(ride.source)는 더 이상 줄마다 적지 않는다.
+      세 안에 같은 문장이 세 번 붙어 카드에서 가장 긴 글이 됐는데, 그걸 읽고
+      사용자가 바꿀 행동이 없다. 판단 근거는 로그와 주석에 남아 있다.
+    */
 
     const go = document.createElement('button');
     go.type = 'button';
@@ -2193,10 +2225,15 @@ function planWait(p, walkMin, t) {
     if (tt) {
         return { miss: false, text: `시간표 기준 다음 차 · ${tt}` };
     }
-    return {
-        miss: false,
-        text: '지금 오고 있는 저상차가 없습니다. 다음 차 시각은 알 수 없습니다.'
-    };
+    /*
+      ★ 셋째 경우('모른다')는 아무 말도 하지 않는다.
+
+      예전에는 '지금 오고 있는 저상차가 없습니다. 다음 차 시각은 알 수 없습니다.' 를 띄웠다.
+      정직한 문장이지만 <b>사용자가 할 수 있는 일이 하나도 없는 문장</b>이고, 저상 실시간이
+      안 잡히는 노선에서는 안마다 이 줄이 붙어 목록이 그 말로 도배됐다.
+      정작 ①·② 처럼 알려줄 게 있을 때 그 줄이 눈에 안 들어온다.
+    */
+    return null;
 }
 
 /** 시간표에서 다음 편이 <b>이 정류장을 지나는</b> 시각. 출발 시각을 그대로 쓰면 지나간 차를 기다린다. */
@@ -2211,18 +2248,6 @@ function planTimetableWait(t) {
         out.push(`${t.destName || ''}→${t.originName || ''} ${passAt(t.nextFromDest[0], t.fromDestMin, t.runMin)}`);
     }
     return out.length ? out.join(' · ') : null;
-}
-
-/**
- * 버스 시간이 어디서 온 값인지 밝힌다.
- *
- * <p>어림한 값과 잰 값을 같은 얼굴로 내보내면 안 된다. 특히 {@code assumed} 는
- * 그 노선을 한 번도 못 잰 상태라, 실제와 몇 분씩 어긋날 수 있다.
- */
-function rideSourceNote(source) {
-    if (source === 'timetable') return '버스 시간은 시간표의 편도 소요시간을 구간 길이로 나눈 추정입니다.';
-    if (source === 'observed') return '버스 시간은 이 노선의 실제 주행 속도를 잰 값으로 계산했습니다.';
-    return '버스 시간은 평균 속도로 어림한 값입니다. 이 노선을 잰 기록이 쌓이면 정확해집니다.';
 }
 
 /** 도보 거리를 그 사람의 분으로. 화면 어디서나 같은 자를 쓴다. */
@@ -2257,6 +2282,12 @@ function drawPlan(i) {
     line(p.ride.path, '#00897b', 'solid', 8, 2);
     line(p.walk2.path, '#1565c0', 'shortdash', 6, 3);
 
+    // 이 안의 1구간이 곧 '정류장까지' 다. 먼저 그려져 있던 점선은 걷어낸다.
+    if (planCoversStop()) clearStopLine();
+
+    // 가야 하는 두 정류장을 빨강으로 찍는다.
+    drawPlanStopMarkers();
+
     // 어느 줄이 그려졌는지 표시만 다시 한다(다시 받지 않는다).
     document.querySelectorAll('#plan-list .plan-row.is-bus').forEach((el, idx) => {
         el.classList.toggle('is-drawn', idx === i);
@@ -2267,6 +2298,10 @@ function clearPlanLines() {
     planLines.forEach(l => l.setMap(null));
     planLines = [];
     planDrawn = -1;
+
+    // 빨간 핀도 이 안에 딸린 것이라 같이 걷는다. 그 뒤 아래 층을 원래대로 되살린다.
+    clearPlanStopMarkers();
+    drawBusStopMarkers();
 }
 
 /**
@@ -3071,17 +3106,19 @@ function clearBusStopMarkers() {
  * <p>카카오 지도에 그려진 아이콘은 카카오 저작물이라 가져다 쓰지 않는다.
  * 같은 뜻이 통하는 그림을 인라인 SVG 로 그리면 파일도 필요 없고 색도 상태에 따라 바꿀 수 있다.
  */
-function busMarkerEl(s, picked) {
-    const el = document.createElement('div');
-    el.className = 'bus-mk' + (picked ? ' is-picked' : '');
-    el.innerHTML =
-        `<span class="bus-mk-pin">
+const BUS_PIN_HTML =
+    `<span class="bus-mk-pin">
            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
              <path fill="currentColor" d="M6 3h12a3 3 0 0 1 3 3v8a2 2 0 0 1-1 1.7V18a1 1 0 0 1-1 1h-1a1 1
                    0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.3A2 2 0 0 1 3 14V6a3 3 0 0 1 3-3zm0
                    3v5h12V6H6zm1.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/>
            </svg>
-         </span>`
+         </span>`;
+
+function busMarkerEl(s, picked) {
+    const el = document.createElement('div');
+    el.className = 'bus-mk' + (picked ? ' is-picked' : '');
+    el.innerHTML = BUS_PIN_HTML
         + `<span class="bus-mk-label">${escapeHtml(s.stopName)}`
         + `${s.distanceM > 0 ? ` · ${s.distanceM}m` : ''}</span>`;
 
@@ -3090,12 +3127,86 @@ function busMarkerEl(s, picked) {
     return el;
 }
 
+/**
+ * 지금 그려진 안에서 <b>실제로 가야 하는 두 정류장</b>. 없으면 {@code null}.
+ *
+ * <p>{@code busStopId}(고른 정류장)와 다르다. 저쪽은 '내가 지금 보고 있는 정류장' 이고
+ * 이쪽은 <b>이 안이 시키는 곳</b>이다 — 목록에서 다른 안을 눌러보는 동안 둘은 갈린다.
+ */
+function planStops() {
+    const p = ((plan && plan.plans) || [])[planDrawn];
+    return (planDrawn < 0 || !p) ? null : { board: p.board, alight: p.alight };
+}
+
+let planStopOverlays = [];
+
+/**
+ * 고른 안의 타는 곳·내리는 곳을 <b>빨강</b>으로 찍는다.
+ *
+ * <p>따로 그리는 이유: 내리는 정류장은 목적지 근처라 주변 조회에도, 지금 보는 지도
+ * 범위에도 없을 때가 많다. 기존 마커 층에 색만 입히는 방식으로는 <b>안 그려진다.</b>
+ *
+ * <p>이름표를 늘 띄운다. 다른 마커는 겹쳐서 가려지니까 마우스를 올린 것만 보여주지만,
+ * 이 둘은 '어디로 가라' 는 안내 자체라 마우스를 올려야 보이면 안 된다.
+ */
+function drawPlanStopMarkers() {
+    clearPlanStopMarkers();
+
+    const ps = planStops();
+    if (!map || activeTab !== 'bus' || !ps) {
+        drawBusStopMarkers();
+        return;
+    }
+
+    [['board', ps.board, '타는 곳'], ['alight', ps.alight, '내리는 곳']].forEach(([kind, s, what]) => {
+        const el = document.createElement('div');
+        el.className = 'bus-mk is-plan is-' + kind;
+        el.innerHTML = BUS_PIN_HTML
+            + `<span class="bus-mk-label">${what} · ${escapeHtml(s.stopName)}</span>`;
+
+        // 타는 곳은 눌러서 그대로 고를 수 있어야 한다 — 도착판·스톱워치가 그 정류장을 본다.
+        if (kind === 'board') {
+            el.addEventListener('click', () => pickBusStop(s));
+        }
+
+        planStopOverlays.push(new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(s.latitude, s.longitude),
+            content: el, yAnchor: 1, zIndex: 6,
+            clickable: kind === 'board', map: map
+        }));
+    });
+
+    // 아래 층에서 같은 자리에 회색·파랑 핀을 또 찍지 않도록 다시 그린다.
+    drawBusStopMarkers();
+}
+
+function clearPlanStopMarkers() {
+    planStopOverlays.forEach(o => o.setMap(null));
+    planStopOverlays = [];
+}
+
 function drawBusStopMarkers() {
     clearBusStopMarkers();
 
     if (!map || activeTab !== 'bus') {
         return;
     }
+
+    // 빨간 핀이 이미 찍힌 자리는 건너뛴다. 같은 곳에 핀이 두 개 겹치면 뭘 보라는 건지 알 수 없다.
+    const ps = planStops();
+    const onPlan = new Set(ps ? [ps.board.stopId, ps.alight.stopId] : []);
+
+    /*
+      ★ 안을 그리고 있는 동안에는 '고른 정류장' 표시를 하지 않는다.
+
+      고른 정류장은 길찾기가 자동으로 넣어두기도 한다(autoPickFromPlan). 그 상태에서
+      목록의 다른 안을 눌러보면, 지금 보는 경로와 아무 상관 없는 정류장 하나가 계속
+      눈에 띄는 색으로 남아 <b>이 안의 정류장인 줄 알게 된다.</b>
+
+      안이 그려져 있으면 답은 빨간 핀 두 개다. 나머지는 전부 '여기 정류장이 있다'
+      수준으로 물러나야 한다 — 즉 회색이다.
+    */
+    const showPicked = !ps;
 
     /*
       ★ 두 벌을 겹쳐 그린다.
@@ -3112,10 +3223,10 @@ function drawBusStopMarkers() {
         ? '지도를 확대하면 주변 정류장이 표시됩니다.' : '';
 
     (wide ? [] : mapStops).forEach(s => {
-        if (near.has(s.stopId)) return;
+        if (near.has(s.stopId) || onPlan.has(s.stopId)) return;
         busStopOverlays.push(new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(s.latitude, s.longitude),
-            content: busMarkerEl(s, s.stopId === busStopId),
+            content: busMarkerEl(s, showPicked && s.stopId === busStopId),
             yAnchor: 1, zIndex: 4, clickable: true, map: map
         }));
     });
@@ -3124,7 +3235,8 @@ function drawBusStopMarkers() {
         return;
     }
     busStops.forEach(s => {
-        const el = busMarkerEl(s, s.stopId === busStopId);
+        if (onPlan.has(s.stopId)) return;
+        const el = busMarkerEl(s, showPicked && s.stopId === busStopId);
         el.classList.add('is-near');
         busStopOverlays.push(new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(s.latitude, s.longitude),
@@ -3279,13 +3391,21 @@ async function measureToStop() {
     busStopMeters = Math.round(res.distanceM);
 
     const points = res.path.map(p => new kakao.maps.LatLng(p[0], p[1]));
-    stopLine = new kakao.maps.Polyline({
-        path: points,
-        strokeWeight: 6, strokeColor: '#1565c0', strokeOpacity: .9,
-        // 점선. 목적지까지의 실선과 눈으로 구분돼야 '어느 선이 정류장까지인지'를 안다.
-        strokeStyle: 'shortdash',
-        zIndex: 3, map: map
-    });
+
+    /*
+      ★ 안이 이미 이 구간을 그리고 있으면 여기서는 그리지 않는다.
+      같은 구간을 두 번 그리면 두 줄로 갈라져 보인다 — planCoversStop 참고.
+      거리는 위에서 이미 재뒀으므로 스톱워치·역산에는 영향이 없다.
+    */
+    if (!planCoversStop()) {
+        stopLine = new kakao.maps.Polyline({
+            path: points,
+            strokeWeight: 6, strokeColor: '#1565c0', strokeOpacity: .9,
+            // 점선. 목적지까지의 실선과 눈으로 구분돼야 '어느 선이 정류장까지인지'를 안다.
+            strokeStyle: 'shortdash',
+            zIndex: 3, map: map
+        });
+    }
 
     /*
       ★ 목적지 경로를 이미 보고 있으면 화면을 옮기지 않는다.
@@ -3301,6 +3421,23 @@ async function measureToStop() {
     renderTrack();
     renderLegs();
     renderSeg();
+}
+
+/**
+ * 지금 그려진 안이 <b>이 정류장까지의 도보를 이미 그리고 있는가.</b>
+ *
+ * <p>{@code drawPlan} 의 1구간(walk1)과 {@code measureToStop} 의 점선은 <b>같은 구간</b>이다 —
+ * 집에서 타는 정류장까지. 색·굵기·점선 모양까지 같아서 겹쳐 그리면 한 줄로 보여야 맞는데,
+ * 둘은 서로 다른 요청으로 따로 계산된 결과라 스냅이 조금만 달라도 <b>두 줄로 갈라져 보인다.</b>
+ * 사용자에게는 '한 경로에 길이 두 개' 로 읽힌다.
+ *
+ * <p>그래서 안이 그 구간을 이미 그리고 있으면 점선은 그리지 않는다. 거리(busStopMeters)는
+ * 그대로 재둔다 — 스톱워치와 나갈 시각 역산이 그 값을 쓴다.
+ */
+function planCoversStop() {
+    if (planDrawn < 0 || !busStop) return false;
+    const p = ((plan && plan.plans) || [])[planDrawn];
+    return !!(p && p.board && p.board.stopId === busStop.stopId);
 }
 
 /** 정류장까지의 점선을 지운다. 정류장을 바꾸거나 버스 탭을 떠날 때. */
@@ -4087,16 +4224,17 @@ function wire() {
       ★ 제보가 여기 들어왔다(2026-08-24). 예전에는 /report.html 로 넘어가는 <a> 라
       이 목록에 없었다. 버튼으로 바뀌었으니 이름을 넣어주지 않으면 아무 일도 안 한다.
     */
-    ['map', 'bus', 'taxi', 'report'].forEach(name => {
+    /*
+      ★ MY 가 이 목록에 들어왔다(2026-08-25). 전에는 화면이 없어서 혼자 빠진 채
+      '준비 중입니다' 만 띄우는 핸들러가 따로 걸려 있었는데, 그 핸들러가 남아 있으면
+      탭을 눌러도 selectTab 이 안 불려 패널이 안 바뀐다 — 같이 걷어냈다.
+    */
+    ['my', 'map', 'bus', 'taxi', 'report'].forEach(name => {
         const btn = document.querySelector(`.rail-tab[data-tab="${name}"]`);
         if (btn) btn.addEventListener('click', () => selectTab(name));
     });
 
-    // MY 는 화면이 아직 없다. 눌린 것만 보이면 되므로(:active 로 색이 바뀐다) 안내만 남긴다.
-    const my = document.querySelector('.rail-tab[data-tab="my"]');
-    if (my) {
-        my.addEventListener('click', () => setStatus('마이페이지는 아직 준비 중입니다.'));
-    }
+    wireMyPage();
 
     // ── 택시 탭 — 기관 고르기
     // 위임으로 건다. 기관이 늘어도 여기를 고칠 일이 없다.
@@ -4193,6 +4331,14 @@ function wire() {
 
 /** 녹음을 몇 ms 뒤에 자동으로 끊을지. 실측 발화가 2~4초라 10초면 넉넉하다. */
 const CHAT_MAX_MS = 10000;
+
+/**
+ * 버스·택시 탭으로 넘길 때 창을 몇 ms 뒤에 닫을지.
+ *
+ * 한 줄짜리 말풍선을 읽는 시간이다. 0 이면 답이 뜨자마자 사라지고, 더 길면
+ * 탭이 바뀐 것을 못 본 채 기다리게 된다.
+ */
+const CHAT_HANDOFF_MS = 900;
 
 let chatOpen = false;
 let chatRecording = false;
@@ -4588,6 +4734,7 @@ async function encodeWav(chunks, rate) {
  */
 async function sendVoiceToServer(wav) {
     $('chat-mic').disabled = true;
+    clearChatModes();
     chatThinking = chatThink();
 
     const body = new FormData();
@@ -4619,11 +4766,7 @@ async function sendVoiceToServer(wav) {
         }
     }
 
-    chatAnswer(ans.answer);
-
-    if (ans.path && ans.path.length) {
-        drawChatRoute(ans);
-    }
+    applyChatAnswer(ans);
 }
 
 /** 입력칸으로 물었을 때. 녹음을 건너뛰고 곧장 같은 자리로 들어간다. */
@@ -4634,6 +4777,20 @@ function submitChatText(e) {
         return;
     }
     $('chat-input').value = '';
+
+    /*
+      ★ 수단을 되묻는 중이면 '버스' 같은 한 마디를 버튼과 같이 본다.
+        (도보는 그릴 경로가 있을 때만 — 계단·공사로 막혀 물어본 경우가 있다)
+    */
+    if (chatAsk) {
+        const mode = typedChatMode(text);
+        const walkable = !!(chatAsk.path && chatAsk.path.length);
+        if (mode && (mode !== 'WALK' || walkable)) {
+            pickChatMode(mode, text);
+            return;
+        }
+    }
+
     chatSay('me', text);
     sendToServer(text);
 }
@@ -4656,6 +4813,7 @@ function submitChatText(e) {
  */
 async function sendToServer(text) {
     $('chat-mic').disabled = true;
+    clearChatModes();
     chatThinking = chatThink();
     chatState('길 찾는 중…');
 
@@ -4688,12 +4846,7 @@ async function sendToServer(text) {
         return;
     }
 
-    chatAnswer(ans.answer);
-
-    // 경로가 나왔으면 지도에도 그린다. 말로만 알려주면 어디로 가는지 알 수 없다.
-    if (ans.path && ans.path.length) {
-        drawChatRoute(ans);
-    }
+    applyChatAnswer(ans);
 }
 
 /**
@@ -4723,6 +4876,220 @@ function chatAnswer(text, fail) {
     chatState('마이크를 누르고 말씀하세요');
 }
 
+/* ── 이동수단 되묻기 ────────────────────────────────────────────
+
+   '청주시청으로 가주세요' 는 걸어갈지 버스를 탈지 말하지 않는다. 전에는 그때도 늘
+   도보로 안내했는데, 그러면 <b>물어본 것과 다른 답</b>이 된다 — 그 사람이 물은 것은
+   '어떻게 가나' 였지 '걸으면 몇 분인가' 가 아니다.
+
+   ★ 되묻는데 서버를 다시 부르지 않는다.
+     needMode 답에 도보 경로가 이미 들어 있고(path·distanceM·minutes), 버스·택시는
+     각자의 탭이 자기 안을 만든다. 그래서 버튼을 눌러도 왕복이 없다 —
+     되묻기 때문에 한 번 더 기다리게 되면 되묻기가 손해가 된다.
+
+   ★ [버스]·[택시] 는 탭으로 넘긴다.
+     두 탭이 답해야 할 것을 이미 답하고 있다(복합경로 · 콜택시 연락처). 말풍선 안에
+     한 벌 더 만들면 같은 것이 두 곳에 생기고, 고칠 때 한쪽만 고치게 된다.
+   ------------------------------------------------------------------ */
+
+/** 지금 되묻고 있는 답. 버튼과 입력칸이 같은 것을 본다. 되물을 것이 없으면 null. */
+let chatAsk = null;
+
+/**
+ * 대화가 몇 번째 턴인가. <b>늦게 도착하는 동작이 지난 턱의 것인지 가리는 데 쓴다.</b>
+ *
+ * ★ handOffToTab 이 창을 잠시 뒤에 닫는데, 그 사이에 사용자가 다시 물으면 그 타이머는
+ *   <b>남의 턴의 것</b>이 된다. 그대로 두면 방금 던진 질문의 답을 보려는 순간 창이 닫힌다.
+ *   턴 번호를 들고 있다가 달라졌으면 조용히 버린다.
+ */
+let chatTurn = 0;
+
+/**
+ * 버튼에 뭐라고 적을지.
+ *
+ * ★ '택시' 가 아니라 '장애인콜택시' 다. 우리가 차를 부르는 것이 아니라 어디에 어떻게
+ *   연락하는지를 알려주는 것이라(택시 탭 주석), '택시' 라고 적으면 누르면 배차될 것처럼
+ *   읽힌다. 버튼 이름은 눌렀을 때 실제로 일어나는 일이어야 한다.
+ */
+const CHAT_MODES = [
+    { key: 'WALK', label: (a) => `걸어서 ${a.minutes}분`, needPath: true },
+    { key: 'BUS',  label: () => '버스',                   needPath: false },
+    { key: 'TAXI', label: () => '장애인콜택시',           needPath: false }
+];
+
+/** 서버가 낸 한 마디를 화면에 반영한다. <b>글로 물었든 말로 물었든 여기로 온다.</b> */
+function applyChatAnswer(ans) {
+    chatAnswer(ans.answer);
+
+    // 수단을 정하지 못했다. 우리가 고르지 않고 물어본다.
+    if (ans.needMode) {
+        showChatModes(ans);
+        return;
+    }
+
+    // 말에 수단이 들어 있었다('버스타고 청주시청'). 되묻지 않고 바로 그 탭으로 간다.
+    if (ans.mode === 'BUS' || ans.mode === 'TAXI') {
+        handOffToTab(ans, ans.mode === 'BUS' ? 'bus' : 'taxi');
+        return;
+    }
+
+    // 경로가 나왔으면 지도에도 그린다. 말로만 알려주면 어디로 가는지 알 수 없다.
+    if (ans.path && ans.path.length) {
+        drawChatRoute(ans);
+    }
+}
+
+/** 말풍선 아래에 고를 것을 붙인다. */
+function showChatModes(ans) {
+    chatAsk = ans;
+
+    const row = document.createElement('div');
+    row.className = 'chat-modes';
+
+    for (const m of CHAT_MODES) {
+        /*
+          ★ 도보가 막혀 있으면 [도보] 를 내지 않는다.
+            계단·공사로 걸어갈 길이 없을 때도 되묻는데(그때가 오히려 물어야 할 자리다),
+            그리면서 그릴 것이 없는 버튼을 같이 내면 눌렀을 때 아무 일도 안 일어난다.
+        */
+        if (m.needPath && !(ans.path && ans.path.length)) {
+            continue;
+        }
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chat-mode';
+        b.textContent = m.label(ans);
+        b.addEventListener('click', () => pickChatMode(m.key, b.textContent));
+        row.appendChild(b);
+    }
+
+    $('chat-log').appendChild(row);
+    $('chat-log').scrollTop = $('chat-log').scrollHeight;
+}
+
+/**
+ * 되묻던 것을 치운다. 새로 물어볼 때와 골랐을 때 부른다.
+ *
+ * ★ 안 치우면 묵은 버튼이 남는다. 그 버튼은 <b>지난 목적지의 좌표</b>를 들고 있어서,
+ *   새 질문을 한 뒤에 눌러보면 엉뚱한 곳으로 안내된다.
+ */
+function clearChatModes() {
+    chatAsk = null;
+    chatTurn++;              // 대화가 한 칸 나아갔다. 지난 턴의 늦은 동작을 무효로 만든다.
+    document.querySelectorAll('#chat-log .chat-modes').forEach(el => el.remove());
+}
+
+/**
+ * 하나를 골랐다.
+ *
+ * @param echo 사용자가 고른 것을 그대로 되비쳐 줄 말. 버튼 글자이거나 직접 친 문장이다.
+ */
+function pickChatMode(mode, echo) {
+    const ans = chatAsk;
+    if (!ans) {
+        return;
+    }
+    clearChatModes();
+    chatSay('me', echo);
+
+    if (mode === 'WALK') {
+        // 숫자는 다시 말하지 않는다 — 바로 위 말풍선에 이미 있다.
+        chatSay('bot', '걸어가는 길로 안내할게요.\n계단과 지하통로를 뺀 길입니다.');
+        drawChatRoute(ans);
+        return;
+    }
+
+    handOffToTab(ans, mode === 'BUS' ? 'bus' : 'taxi');
+}
+
+/**
+ * 버스·택시 탭에 넘긴다. <b>여기서 경로를 그리지 않는다.</b>
+ *
+ * <p>출발·도착만 채워두면 버스 탭이 열리면서 loadPlan 이 복합 경로를 만든다 —
+ * 이미 있고 이미 검증된 길이다.
+ */
+function handOffToTab(ans, tab) {
+    if (ans.start && ans.end) {
+        setChatPlaces(ans);
+    }
+
+    selectTab(tab);
+
+    /*
+      ★ 창을 닫는다 — 다만 곧바로는 아니다.
+
+      닫는 이유: 980px 아래에서는 챗봇이 화면을 통째로 덮는다(map.css 의 미디어 쿼리 —
+      태블릿이 정확히 그 폭이다). 탭만 바꿔놓고 창을 열어두면 사용자는 <b>아무 변화도
+      못 본다.</b> 대화는 지워지지 않으므로 다시 열면 그대로 이어진다.
+
+      잠깐 두는 이유: 방금 띄운 말풍선("버스를 찾아볼게요")이 그대로 사라진다.
+      음성으로 물었을 때는 <b>'무엇으로 들었는지'까지 같이 사라져서</b>, 잘못 들은 채로
+      엉뚱한 탭이 열려도 사용자가 이유를 알 길이 없다. 한 줄을 읽을 만큼만 둔다.
+
+      ★ 그 사이에 사용자가 다시 물었으면 닫지 않는다. 그 타이머는 지난 턴의 것이고,
+        새 질문의 답이 뜨는 순간 창이 닫히면 그게 더 나쁘다.
+    */
+    const turn = chatTurn;
+    setTimeout(() => {
+        if (chatOpen && turn === chatTurn) {
+            toggleChat(false);
+        }
+    }, CHAT_HANDOFF_MS);
+}
+
+/**
+ * 챗봇이 쓴 출발·도착을 화면의 칸에 얹는다.
+ *
+ * ★ 화면에 이미 있던 출발지의 <b>이름을 지우지 않는다.</b>
+ *
+ *   서버는 화면이 보낸 그 좌표를 그대로 쓴다(sendToServer 가 picked.start 를 같이 보낸다).
+ *   그런데도 '출발지' 라는 이름으로 덮어쓰면, [충북대학교 정문] 이라고 적혀 있던 칸이
+ *   [출발지] 가 된다 — <b>사용자가 직접 골라 넣은 것을 우리가 지우는 것</b>이다.
+ *   실제로 [버스] 를 눌러보고 알았다(2026-08-25).
+ *
+ *   화면에 아무것도 없었을 때만 새로 넣는다. 그때는 서버가 등록해둔 집을 쓴 것이라
+ *   화면에는 아직 아무 이름도 없다.
+ *
+ *   좌표까지 같은지 본다. 답을 기다리는 사이에 사용자가 출발지를 바꿨다면 이름만 남기고
+ *   좌표가 어긋난 칸이 되므로, 그때는 안내에 쓴 좌표로 맞춘다.
+ */
+function setChatPlaces(ans) {
+    const same = picked.start
+        && Math.abs(picked.start.lat - ans.start[0]) < 1e-6
+        && Math.abs(picked.start.lng - ans.start[1]) < 1e-6;
+
+    if (!same) {
+        setPlace('start', { name: '출발지', lat: ans.start[0], lng: ans.start[1] });
+    }
+    setPlace('end', { name: ans.destination, lat: ans.end[0], lng: ans.end[1] });
+}
+
+/**
+ * 되묻는 중에 친 한 마디가 '수단' 인가.
+ *
+ * ★ 버튼이 떠 있어도 타이핑으로 답하는 사람이 있다. 그대로 서버에 보내면 Gemini 가
+ *   '버스' 에서 목적지를 뽑으려다 실패해서 "'버스' 에서 갈 곳을 찾지 못했습니다" 가 뜬다 —
+ *   방금 물어놓고 그 답을 못 알아듣는 셈이다.
+ *
+ * ★ 되묻는 중일 때만 본다. 평소에 이렇게 읽으면 '버스터미널로 가주세요' 가 수단이 된다.
+ *   지금은 수단을 물어놓은 자리라 오는 답이 수단이다.
+ *
+ * @return 'WALK' · 'BUS' · 'TAXI', 아니면 null(그냥 서버로 보낸다)
+ */
+function typedChatMode(text) {
+    const t = text.replace(/\s+/g, '');
+    if (t.includes('택시')) {
+        return 'TAXI';
+    }
+    if (t.includes('버스')) {
+        return 'BUS';
+    }
+    if (t.includes('도보') || t.includes('걸어') || t.includes('걷')) {
+        return 'WALK';
+    }
+    return null;
+}
+
 /**
  * 챗봇이 낸 경로를 지도와 패널에 얹는다.
  *
@@ -4734,8 +5101,24 @@ function chatAnswer(text, fail) {
  * (setPlace 자체는 재탐색을 부르지 않는다 — maybeRoute 는 choosePlace 쪽에 있다)
  */
 function drawChatRoute(ans) {
-    setPlace('start', { name: '출발지', lat: ans.start[0], lng: ans.start[1] });
-    setPlace('end', { name: ans.destination, lat: ans.end[0], lng: ans.end[1] });
+    setChatPlaces(ans);
+
+    /*
+      ★ 도보 탭으로 옮긴다. (data-tab="map" 이 화면에서는 [도보] 다)
+
+      안 옮기면 두 가지가 한꺼번에 어긋난다 —
+        · 패널이 버스·택시 탭에 머물러서, 방금 찾은 경로의 거리·소요시간이 안 보인다.
+          그 요약은 도보 탭의 것이다
+        · <b>선까지 사라진다.</b> syncRouteLine 이 버스 탭에서는 도보 선을 감추는데,
+          바로 아래 showRoute 가 renderPanes 를 부르면서 그것이 돈다
+
+      [버스]·[택시] 는 고른 탭으로 넘기면서 도보만 제자리에 뒀던 것이 원인이다.
+      selectTab 을 여기 두면 '도보로 가주세요' 와 [걸어서 N분] 버튼이 같은 길을 탄다.
+
+      ★ 선을 만들기 전에 부른다. 아래 showRoute 안에서 syncRouteLine 이 도는데,
+        그때 activeTab 이 이미 'map' 이어야 방금 그린 선이 안 지워진다.
+    */
+    selectTab('map');
 
     if (routeLine) {
         routeLine.setMap(null);
@@ -4964,8 +5347,29 @@ const PLACE_KINDS = {
 /** 지금 창이 다루고 있는 종류. 닫히면 null 이다. */
 let placeKind = null;
 
+/**
+ * 바로가기로 고른 장소를 <b>어느 칸에 넣을 것인가</b>. 'start' 또는 'end'.
+ *
+ * ★ 왜 있나: 집·회사는 출발지로만 들어갔다. 그런데 '집으로 가는 길' 을 찾는 일도
+ *   그만큼 흔한데, 그때는 도착지 칸에 손으로 주소를 쳐야 했다 — 등록해둔 값이 있는데도.
+ *
+ * ★ 기준은 <b>버튼을 누르기 직전에 쓰고 있던 칸</b>이다. 아무 칸도 안 쓰고 있었으면
+ *   출발지다(원래 동작). 도착지를 누르고 나서 집을 누르면 도착지가 집이 된다.
+ */
+let placeTarget = 'start';
+
 /** 이미 등록돼 있던 것. 없으면 null. 지우기·출발 버튼이 이 값을 본다. */
 let placeSaved = null;
+
+/**
+ * 이 창을 <b>어디서 열었나</b>. 'shortcut'(바로가기 버튼) 또는 'my'(마이페이지).
+ *
+ * ★ 저장한 뒤에 할 일이 갈린다. 바로가기에서 열었으면 곧바로 출발지에 넣는 것이 맞다 —
+ *   집 버튼을 누른 이유가 결국 그것이다. 그런데 마이페이지에서 열었으면 출발·도착 칸이
+ *   아예 감춰져 있어서(renderPanes), 넣어봐야 <b>보이지 않는 곳에 값이 들어가고</b>
+ *   알림도 감춰진 상태줄에 찍힌다. 실제로 '저장했는데 아무 일도 안 일어난' 것처럼 보인다.
+ */
+let placeFrom = 'shortcut';
 
 /**
  * 서버로 보낼 <b>원문</b> 주소. 화면의 칸에는 우편번호가 붙은 표시용 문자열이 들어간다.
@@ -4984,6 +5388,15 @@ let placeMarker = null;
 
 function wirePlaces() {
     document.querySelectorAll('.shortcut').forEach(btn => {
+        /*
+          ★ pointerdown 에서 붙잡는다. click 에서는 <b>이미 늦다</b> —
+          버튼을 누르는 순간 입력칸의 포커스가 먼저 풀려서(blur), click 때
+          document.activeElement 를 보면 언제나 버튼 자신이 잡힌다.
+
+          pointerdown 은 blur 보다 먼저 오고 마우스·터치·펜을 한꺼번에 받는다.
+          (mousedown 만 걸면 터치 기기에서 매번 출발지로 들어간다)
+        */
+        btn.addEventListener('pointerdown', rememberPlaceTarget);
         btn.addEventListener('click', () => openPlace(btn.dataset.place));
     });
 
@@ -5001,6 +5414,22 @@ function wirePlaces() {
 }
 
 /**
+ * 버튼을 누르기 <b>직전에</b> 쓰고 있던 칸을 기억해 둔다.
+ *
+ * <p>도착지 칸을 쓰고 있었으면 'end', 그 밖에는 전부 'start' 다. 출발지 칸이든
+ * 아무 데도 아니든 결과가 같으므로 따로 가르지 않는다 — 원래 동작이 출발지였다.
+ */
+function rememberPlaceTarget() {
+    const el = document.activeElement;
+    placeTarget = (el && el.id === 'in-end') ? 'end' : 'start';
+}
+
+/** 화면에 적을 칸 이름. */
+function fieldName(field) {
+    return field === 'end' ? '도착지' : '출발지';
+}
+
+/**
  * 바로가기 버튼을 눌렀을 때.
  *
  * <b>등록된 주소가 있으면 창을 띄우지 않는다.</b> 곧바로 출발지에 넣고 끝이다 —
@@ -5013,6 +5442,7 @@ function wirePlaces() {
  *     (region-id 를 갈아탄 경우다. 이때는 다시 등록할 길이 있어야 한다)
  */
 async function openPlace(key) {
+    placeFrom = 'shortcut';
     const kind = PLACE_KINDS[key];
     if (!kind) {
         // 지금 여기로 오는 것은 '자주가는 경로' 뿐이다 — 장소 한 곳이 아니라 출발+도착
@@ -5051,8 +5481,8 @@ async function openPlace(key) {
     }
 
     if (place && place.usable) {
-        applyPlaceAsStart(place);
-        setStatus(`출발지를 ${josa(place.label, '으로')} 정했습니다.`, 'ok');
+        applyPlaceTo(place, placeTarget);
+        setStatus(`${fieldName(placeTarget)}를 ${josa(place.label, '으로')} 정했습니다.`, 'ok');
         return;                                // ★ 창을 띄우지 않는다
     }
 
@@ -5072,12 +5502,32 @@ function openPlaceForm(kind, outOfRegion) {
     placeAddress = outOfRegion ? outOfRegion.address : '';
     placeZonecode = (outOfRegion && outOfRegion.zonecode) ? outOfRegion.zonecode : '';
 
-    $('place-title').textContent = kind.name + ' 주소 설정';
+    /*
+      ★ 이미 등록된 것이 있으면 '설정' 이 아니라 '수정' 이다.
+
+      마이페이지에서 오는 길이 생기면서 <b>고치러 오는 경우가 흔해졌다.</b> 주소가 이미
+      채워진 창에 '설정' 이라고 적혀 있으면 새로 넣는 자리인지 고치는 자리인지 알 수 없다.
+      [등록하기] 도 같은 이유로 [저장] 이 된다 — 누르면 새로 생기는 것이 아니라 덮어쓴다.
+    */
+    const editing = !!outOfRegion;
+    $('place-title').textContent = kind.name + (editing ? ' 주소 수정' : ' 주소 설정');
+    $('place-submit').textContent = editing ? '저장' : '등록하기';
     $('place-addr').value = placeAddress ? displayAddress(placeAddress, placeZonecode) : '';
     $('place-detail').value = (outOfRegion && outOfRegion.addressDetail) || '';
     $('place-submit').disabled = false;
     placeMsg('');
     placePreview(null);
+
+    /*
+      ★ [주소 지우기] 는 <b>등록된 것이 있을 때만</b> 선다. 한 번도 안 넣은 사람에게
+      지울 것이 있는 것처럼 보이면 안 된다.
+
+      두 번 눌러야 지워지므로(askDelete) 창을 열 때마다 글자를 되돌려 놓는다.
+      안 되돌리면 지난번에 한 번 눌러둔 '정말 지울까요?' 가 남아 다음에 열었을 때
+      <b>첫 클릭에 바로 지워진다.</b>
+    */
+    resetDeleteButton();
+    $('place-delete').hidden = !(outOfRegion && outOfRegion.id);
 
     $('place-modal').hidden = false;
 
@@ -5102,6 +5552,8 @@ function displayAddress(address, zonecode) {
 function closePlace() {
     $('place-modal').hidden = true;
     placeKind = null;
+    // 닫는 것도 '지우기를 그만둔' 것이다. 여기서 안 되돌리면 다시 열었을 때 한 클릭 앞서 있다.
+    resetDeleteButton();
 }
 
 /**
@@ -5231,13 +5683,26 @@ async function savePlace(e) {
             return;
         }
 
-        // 등록하자마자 출발지로 넣는다. 이 창을 여는 이유가 결국 그것이다 —
-        // 등록만 되고 아무 일도 안 일어나면 사용자가 한 번 더 눌러야 한다.
         const label = data.place.label;
-        applyPlaceAsStart(data.place);
+
+        /*
+          ★ 마이페이지에서 열었으면 출발지에 넣지 않는다. 그 탭에서는 출발·도착 칸과
+          상태줄이 감춰져 있어서(renderPanes), 넣어도 보이지 않는 곳에 값이 들어가고
+          알림도 안 보이는 줄에 찍힌다 — '저장했는데 아무 일도 안 일어난' 화면이 된다.
+          대신 왼쪽 목록을 다시 읽어 <b>바뀐 주소가 그 자리에서</b> 보이게 한다.
+        */
+        if (placeFrom === 'my') {
+            closePlace();
+            loadMyInfo();
+            return;
+        }
+
+        // 등록하자마자 칸에 넣는다. 이 창을 여는 이유가 결국 그것이다 —
+        // 등록만 되고 아무 일도 안 일어나면 사용자가 한 번 더 눌러야 한다.
+        applyPlaceTo(data.place, placeTarget);
         closePlace();
         setStatus((changed ? '주소를 변경했습니다' : josa(label, '을') + ' 등록했습니다')
-            + '. 출발지로 넣었습니다.', 'ok');
+            + `. ${fieldName(placeTarget)}로 넣었습니다.`, 'ok');
 
     } catch {
         placeMsg('서버에 연결하지 못했습니다.');
@@ -5251,10 +5716,10 @@ async function savePlace(e) {
  * setPlace 를 그대로 쓴다 — 핀 그리기, 정류장까지 다시 재기, 탈 정류장 후보 갱신이
  * 전부 거기 묶여 있다. 여기서 따로 하면 버스 탭에서만 어긋난다.
  */
-function applyPlaceAsStart(place) {
+function applyPlaceTo(place, field) {
     const lat = Number(place.latitude), lng = Number(place.longitude);
 
-    setPlace('start', { name: place.label, lat, lng });
+    setPlace(field, { name: place.label, lat, lng });
 
     /*
       ★ 지도를 그 자리로 옮긴다. 칸만 채우면 핀이 화면 밖에 찍혀서
@@ -5263,17 +5728,27 @@ function applyPlaceAsStart(place) {
       지도 탭과 버스 탭이 지도 하나를 같이 쓰므로 여기 한 번이면 양쪽에 다 걸린다.
       버스 탭에서는 idle 이 걸려 화면 안 정류장도 새 자리 기준으로 다시 그려진다.
 
-      ★ 도착지가 이미 있으면 옮기지 않는다. 바로 아래 maybeRoute 가 경로를 그리고
-      setBounds 로 경로 전체를 담는데, 먼저 옮겨두면 <b>화면이 두 번 튄다.</b>
+      ★ <b>반대쪽 칸</b>이 이미 차 있으면 옮기지 않는다. 바로 아래 maybeRoute 가 경로를
+      그리고 setBounds 로 경로 전체를 담는데, 먼저 옮겨두면 <b>화면이 두 번 튄다.</b>
       경로 범위에는 어차피 이 자리가 들어 있다.
+      (출발지를 넣었으면 도착지가, 도착지를 넣었으면 출발지가 '반대쪽' 이다)
 
-      배율은 너무 넓게 보고 있을 때만 당긴다 — runSearch·focusPlace 와 같은 규칙이다.
-      항상 맞추면 사용자가 일부러 맞춰둔 배율을 빼앗는다.
+      배율은 너무 넓게 보고 있을 때만 당긴다. 항상 맞추면 사용자가 일부러 맞춰둔
+      배율을 빼앗는다.
+
+      ★ 검색(runSearch·choosePlace)보다 <b>두 단계 더 당긴다</b>(4 → 2).
+        집·회사는 이미 아는 자리라, 눌렀을 때 알고 싶은 것은 '거기가 어디냐' 가 아니라
+        <b>'그 앞이 어떻게 생겼냐'</b> 다 — 어느 골목으로 나가는지, 정류장이 어느 쪽인지.
+        건물 하나하나가 구분되는 배율이라야 그 판단이 된다.
+        검색 결과는 반대로 처음 보는 자리라 주변이 함께 보여야 해서 4 로 둔다.
+
+        기준도 같이 내린다(> 3). 목표 배율보다 높게 잡아두면 그 사이 배율에서 눌렀을 때
+        아무 일도 안 일어나 '더 당겨진다' 는 말이 어긋난다.
     */
-    if (!picked.end) {
+    if (!picked[field === 'start' ? 'end' : 'start']) {
         // 배율을 먼저 맞추고 옮긴다. 순서가 반대면 배율이 바뀌면서 중심이 다시 잡혀
         // 수십 m 어긋난다(level 8 에서 누르면 36m 밀렸다).
-        if (map.getLevel() > 5) map.setLevel(4);
+        if (map.getLevel() > 3) map.setLevel(2);
         map.setCenter(new kakao.maps.LatLng(lat, lng));
     }
 
@@ -5286,4 +5761,540 @@ function placeMsg(text, ok) {
     el.textContent = text;
     el.hidden = !text;
     el.classList.toggle('ok', !!ok);
+}
+
+
+/* ── 마이페이지 (MY 탭) ────────────────────────────────────────────
+   ★ 세 겹이다. 각자 맡은 것이 다르다.
+
+     ① 왼쪽 패널(#pane-my)   저장된 값을 <b>보여주기만</b> 한다. 버튼은 [수정] 하나뿐
+     ② 수정 화면(#my-edit)   지도 자리를 덮고 선다. '무엇을 고칠 수 있는가' 를 늘어놓는다
+     ③ 모달                  실제로 고치는 곳. 주소는 기존 #place-modal, 비밀번호는 #pw-modal
+
+   ★ 왜 ① 에 항목별 [수정] 을 안 다는가: 처음에는 그렇게 그렸는데, 그러면 ② 가
+     <b>같은 항목을 한 번 더</b> 늘어놓고 [수정] 을 두 번 눌러야 편집칸이 나온다.
+     버튼을 하나로 줄여 '보는 곳 / 고치는 곳' 으로 역할을 갈랐다.
+
+   ★ 고칠 수 있는 것은 비밀번호·집·회사 주소 셋뿐이다.
+     이메일은 아이디·비밀번호 찾기의 유일한 열쇠라 인증 없이 바꾸면 계정 이전에 가깝고,
+     아이디는 USERS 의 PK 인데 USER_PLACES·WALK_RECORDS·OBSTACLE_REPORTS 가 전부
+     FK 없이 문자열로 물고 있다. 둘 다 <b>보여주기만</b> 한다.
+   ------------------------------------------------------------------ */
+
+/** 방금 읽어둔 장소. 수정 화면과 [지우기] 가 이 값에서 id 를 꺼낸다. */
+let myPlaces = { HOME: null, WORK: null };
+
+function wireMyPage() {
+    $('my-edit-open').addEventListener('click', openMyEdit);
+    $('my-edit-close').addEventListener('click', closeMyEdit);
+
+    // 주소 [수정] 둘. 위임으로 건다 — 종류가 늘어도 여기를 고칠 일이 없다.
+    $('my-edit').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-edit-place]');
+        if (btn) {
+            openPlaceEdit(btn.dataset.editPlace);
+        }
+    });
+
+    $('my-pw-open').addEventListener('click', openPw);
+    $('pw-close').addEventListener('click', closePw);
+    $('pw-backdrop').addEventListener('click', closePw);
+    $('pw-form1').addEventListener('submit', verifyPwStep);
+    $('pw-form2').addEventListener('submit', submitPw);
+
+    /*
+      ★ 치는 동안 검사한다. 세 칸 모두 input 을 건다.
+
+      현재 비밀번호 칸도 거는 이유는 그 값이 <b>새 비밀번호 검사의 재료</b>이기 때문이다 —
+      '지금 쓰는 것과 같은가' 는 두 칸을 맞대봐야 알 수 있어서, 현재 비밀번호를 나중에
+      고치면 새 비밀번호 칸의 판정도 같이 달라져야 한다.
+
+      change 가 아니라 input 이다. change 는 칸을 떠나야 오는데, 그러면 '치는 순간'이 아니다.
+    */
+    /*
+      ★ 2단계 칸만 건다. 현재 비밀번호는 이제 1단계에서 서버가 확인해 끝난 값이라
+      치는 동안 볼 것이 없다 — 고쳐 치는 중이면 지난 판정만 걷어내면 된다.
+    */
+    ['pw-new', 'pw-new2'].forEach(id => {
+        $(id).addEventListener('input', validatePw);
+    });
+    $('pw-current').addEventListener('input', () => pwHint('pw-current', ''));
+
+    $('place-delete').addEventListener('click', askDelete);
+
+    // 비밀번호 창이 떠 있을 때만 Esc 로 닫는다(장소 창과 같은 방식).
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !$('pw-modal').hidden) {
+            closePw();
+        }
+    });
+}
+
+/**
+ * 회원 정보와 장소를 한 번에 읽어 패널을 채운다.
+ *
+ * ★ 둘을 <b>같이</b> 기다린다. 따로 그리면 이메일이 먼저 뜨고 주소가 나중에 채워져
+ *   목록이 두 번 움직인다 — 짧은 목록이라 그 흔들림이 그대로 보인다.
+ */
+async function loadMyInfo() {
+    if (!loginId) {
+        renderMyPanel(null, null);
+        return;
+    }
+
+    try {
+        const [meRes, placeRes] = await Promise.all([
+            fetch('/api/mypage'),
+            fetch('/api/places')
+        ]);
+
+        if (meRes.status === 401 || placeRes.status === 401) {
+            // config 를 받은 뒤 세션이 끊긴 경우다. 화면의 loginId 만 믿으면 여기서 어긋난다.
+            loginId = '';
+            renderMyPanel(null, null);
+            return;
+        }
+
+        const me = await meRes.json();
+        const pl = await placeRes.json();
+
+        myPlaces = { HOME: null, WORK: null };
+        (pl.places || []).forEach(p => {
+            // FAV 는 여기서 다루지 않는다 — 집·회사와 달리 여러 개고, 담을 화면이 아직 없다.
+            if (p.placeType === 'HOME' || p.placeType === 'WORK') {
+                myPlaces[p.placeType] = p;
+            }
+        });
+
+        renderMyPanel(me.ok ? me : null, myPlaces);
+
+    } catch {
+        myNote('회원 정보를 불러오지 못했습니다. 잠시 후 다시 열어 주세요.');
+    }
+}
+
+/**
+ * 한 줄에 적을 주소 글자.
+ *
+ * ★ 안내 지역 밖이면 <b>왜 못 쓰는지</b>를 같이 적는다. 그냥 주소만 보여주면
+ *   집 버튼이 안 먹는 이유를 알 길이 없고, 아예 안 보여주면 등록이 지워진 줄 안다
+ *   (UserPlaceDTO.usable 이 정확히 이것 때문에 있는 값인데 쓰는 화면이 없었다).
+ */
+function placeText(place) {
+    if (!place) {
+        return '등록하지 않았습니다';
+    }
+    const addr = place.address + (place.addressDetail ? ' ' + place.addressDetail : '');
+    return place.usable ? addr : addr + ' (지금은 안내 중인 지역 밖입니다)';
+}
+
+function renderMyPanel(me, places) {
+    const out = !loginId || !me;
+
+    $('my-email').textContent    = out ? '—' : (me.email || '(등록된 이메일이 없습니다)');
+    $('my-username').textContent = out ? '—' : me.username;
+    $('my-password').textContent = out ? '—' : '••••••••';
+    $('my-home').textContent     = out ? '—' : placeText(places && places.HOME);
+    $('my-work').textContent     = out ? '—' : placeText(places && places.WORK);
+
+    // 로그인 안 했으면 고칠 것이 없다. 버튼을 남겨두면 눌러보고 빈 화면을 만난다.
+    $('my-edit-open').hidden = out;
+    myNote(out ? '로그인하면 회원 정보를 보고 고칠 수 있습니다.' : '');
+
+    // 수정 화면이 떠 있는 채로 다시 읽었을 수 있다(주소를 저장한 직후가 그렇다).
+    if (!$('my-edit').hidden) {
+        fillMyEdit(me, places);
+    }
+}
+
+/** 패널 아래 안내 줄. 빈 문자열이면 감춘다. */
+function myNote(text) {
+    const el = $('my-note');
+    el.textContent = text;
+    el.hidden = !text;
+}
+
+function fillMyEdit(me, places) {
+    $('my-edit-email').value    = (me && me.email) || '';
+    $('my-edit-username').value = (me && me.username) || '';
+    $('my-edit-home').textContent = placeText(places && places.HOME);
+    $('my-edit-work').textContent = placeText(places && places.WORK);
+}
+
+/**
+ * 수정 화면을 연다 — 지도 자리를 덮는다.
+ *
+ * ★ 페이지를 넘어가지 않는 이유는 제보 탭을 이 화면 안으로 들여온 것과 같다.
+ *   보던 지도와 찍어둔 출발·도착이 통째로 사라지면 돌아왔을 때 처음부터 다시 해야 한다.
+ */
+function openMyEdit() {
+    $('my-edit').hidden = false;
+    loadMyInfo();          // 열면서 한 번 더 읽는다. 패널의 값이 오래됐을 수 있다
+}
+
+function closeMyEdit() {
+    const el = $('my-edit');
+    if (el) {
+        el.hidden = true;
+    }
+}
+
+/**
+ * 주소 [수정] — 이미 있는 장소 등록 창을 그대로 연다.
+ *
+ * ★ openPlace 를 부르지 않는다. 그쪽은 '등록돼 있고 쓸 수 있으면 창을 안 띄우고
+ *   곧바로 출발지에 넣는' 길이라, 여기서 부르면 <b>고치려고 눌렀는데 창이 안 뜬다.</b>
+ *   등록 창을 직접 여는 openPlaceForm 을 쓴다.
+ */
+function openPlaceEdit(key) {
+    const kind = PLACE_KINDS[key];
+    if (!kind) {
+        return;
+    }
+    placeFrom = 'my';
+    openPlaceForm(kind, myPlaces[kind.type]);
+}
+
+/* ── 주소 지우기 ──────────────────────────────────────────────
+   ★ 두 번 눌러야 지워진다. 첫 클릭에 글자가 바뀌고 두 번째에 실제로 부른다.
+
+   confirm() 을 쓰지 않은 것은 이 창 위에 브라우저 기본 대화상자가 겹치면 모양이 튀기
+   때문이다. 삭제는 [등록하기] 와 다른 호출이라 <b>누르는 순간 반영되고 되돌릴 수 없다</b> —
+   주소를 다시 받으려면 우편번호 찾기부터 다시 해야 한다.
+   ------------------------------------------------------------------ */
+
+/** 지금 확인을 기다리는 중인가. 창을 닫거나 다시 열면 풀린다. */
+let deleteArmed = false;
+
+function resetDeleteButton() {
+    deleteArmed = false;
+    const btn = $('place-delete');
+    if (btn) {
+        btn.textContent = '주소 지우기';
+        btn.classList.remove('is-armed');
+        btn.disabled = false;
+    }
+}
+
+async function askDelete() {
+    const btn = $('place-delete');
+
+    if (!deleteArmed) {
+        deleteArmed = true;
+        btn.textContent = '정말 지울까요?';
+        btn.classList.add('is-armed');
+        return;
+    }
+
+    const saved = placeSaved;
+    if (!saved || !saved.id) {
+        resetDeleteButton();
+        return;
+    }
+
+    btn.disabled = true;
+    placeMsg('');
+
+    try {
+        const res = await fetch('/api/places/' + saved.id, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+            placeMsg(data.message || '지우지 못했습니다.');
+            resetDeleteButton();
+            return;
+        }
+
+        closePlace();
+        loadMyInfo();
+
+    } catch {
+        placeMsg('서버에 연결하지 못했습니다.');
+        resetDeleteButton();
+    }
+}
+
+/* ── 비밀번호 변경 ────────────────────────────────────────────── */
+
+/**
+ * 1단계를 통과한 <b>현재 비밀번호</b>. 2단계가 서버로 다시 보낼 값이다.
+ *
+ * ★ 왜 들고 있나: 1단계 통과를 세션에 남기지 않기로 했기 때문이다. 세션에 두면 그 표시가
+ *   살아 있는 동안 현재 비밀번호를 모르는 사람도 바꿀 수 있다(/user/newPasswordAjax 가
+ *   그 구조다). 대신 2단계가 값을 다시 실어 보내고 서버가 마지막에 한 번 더 대조한다.
+ *
+ * ★ 창을 닫을 때 반드시 비운다. 안 비우면 평문 비밀번호가 화면이 닫힌 뒤에도 남는다.
+ */
+let pwVerified = '';
+
+/** 창을 1단계 상태로 되돌린다. 열 때와 성공 뒤에 쓴다. */
+function resetPw() {
+    pwVerified = '';
+    $('pw-current').value = '';
+    $('pw-new').value = '';
+    $('pw-new2').value = '';
+
+    $('pw-form1').hidden = false;
+    $('pw-form2').hidden = true;
+    $('pw-intro').textContent = '먼저 지금 쓰는 비밀번호를 확인합니다.';
+
+    $('pw-next').disabled = false;
+    $('pw-submit').disabled = false;
+    pwMsg('');
+    clearPwHints();          // 지난번에 띄운 빨간 줄이 남아 있으면 안 된다
+}
+
+function openPw() {
+    resetPw();
+    $('pw-modal').hidden = false;
+    $('pw-current').focus();
+}
+
+function closePw() {
+    $('pw-modal').hidden = true;
+    /*
+      칸과 기억해둔 값을 <b>둘 다</b> 비운다. 칸만 비우면 pwVerified 에 평문 비밀번호가
+      그대로 남아, 창을 닫아도 화면 어딘가에 살아 있게 된다.
+    */
+    resetPw();
+}
+
+/**
+ * 1단계 — 현재 비밀번호가 맞는지 서버에 한 번 물어본다.
+ *
+ * <p>맞으면 2단계로 넘어간다. <b>서버는 아무 표시도 남기지 않는다</b> — 넘어갔다는 것은
+ * 이 화면만 아는 사실이고, 실제 권한은 2단계가 현재 비밀번호를 다시 대조해서 얻는다.
+ *
+ * <p>틀리면 그 칸 밑에 붙이고 값을 선택해 둔다. 곧바로 다시 칠 수 있어야 한다.
+ */
+async function verifyPwStep(e) {
+    e.preventDefault();
+
+    const cur = $('pw-current').value;
+    if (!cur) {
+        pwHint('pw-current', '현재 비밀번호를 입력해 주세요.');
+        $('pw-current').focus();
+        return;
+    }
+
+    const btn = $('pw-next');
+    btn.disabled = true;
+    pwMsg('');
+    pwHint('pw-current', '');
+
+    try {
+        const body = new URLSearchParams();
+        body.set('currentPassword', cur);
+
+        const res = await fetch('/api/mypage/password/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+            const msg = data.message || '확인하지 못했습니다.';
+            if (data.field === 'currentPassword') {
+                pwHint('pw-current', msg);
+                $('pw-current').focus();
+                $('pw-current').select();
+            } else {
+                pwMsg(msg);            // 401(로그인 풀림) 같은, 칸에 매달 수 없는 것
+            }
+            btn.disabled = false;
+            return;
+        }
+
+        // 통과. 값을 기억해두고 칸은 비운다 — 다음 화면에 남겨둘 이유가 없다.
+        pwVerified = cur;
+        $('pw-current').value = '';
+
+        $('pw-form1').hidden = true;
+        $('pw-form2').hidden = false;
+        $('pw-intro').textContent = '새로 쓸 비밀번호를 정해 주세요.';
+        $('pw-new').focus();
+
+    } catch {
+        pwMsg('서버에 연결하지 못했습니다.');
+        btn.disabled = false;
+    }
+}
+
+/**
+ * 칸 밑의 안내 줄. text 가 비면 감춘다.
+ *
+ * @param kind 'bad'(빨강) 또는 'good'(초록). 없으면 'bad'.
+ */
+function pwHint(field, text, kind) {
+    const el = $(field + '-hint');
+    el.textContent = text;
+    el.hidden = !text;
+    el.classList.toggle('is-good', kind === 'good');
+
+    // 칸 테두리도 같이 물들인다. 줄만 바뀌면 칸이 여러 개일 때 어느 것인지 한 번 더 찾아야 한다.
+    $(field).classList.toggle('is-bad', !!text && kind !== 'good');
+}
+
+function clearPwHints() {
+    ['pw-current', 'pw-new', 'pw-new2'].forEach(id => pwHint(id, ''));
+}
+
+/**
+ * 치는 동안 하는 검사.
+ *
+ * <p><b>여기서 볼 수 있는 것은 화면 안에 값이 다 있는 것뿐이다.</b> 두 가지다 —
+ * 새 비밀번호가 지금 것과 같은가, 확인 칸과 일치하는가.
+ *
+ * <p><b>'현재 비밀번호가 맞는가' 는 이 자리의 일이 아니다.</b> 서버만 아는 값이고,
+ * 1단계에서 [다음] 을 누를 때 이미 확인이 끝났다(verifyPwStep). 여기서 맞대는 현재
+ * 비밀번호는 그때 통과한 값({@code pwVerified})이다 — 칸을 읽지 않는다. 2단계에는
+ * 그 칸이 아예 없다.
+ *
+ * <p>빈 칸에는 아무 말도 하지 않는다. 창을 열자마자 세 줄이 빨갛게 서면, 아직 아무것도
+ * 안 했는데 뭔가 잘못한 것처럼 보인다.
+ */
+function validatePw() {
+    const cur = pwVerified;
+    const nw  = $('pw-new').value;
+    const nw2 = $('pw-new2').value;
+
+    if (!nw) {
+        pwHint('pw-new', '');
+    } else if (cur && nw === cur) {
+        pwHint('pw-new', '지금 쓰는 비밀번호와 같습니다.');
+    } else {
+        pwHint('pw-new', '');
+    }
+
+    /*
+      확인 칸은 맞을 때도 말해준다. 비밀번호는 글자가 안 보이는 칸이라
+      '틀렸다는 말이 없음' 만으로는 제대로 쳤는지 확신하기 어렵다.
+    */
+    if (!nw2) {
+        pwHint('pw-new2', '');
+    } else if (nw !== nw2) {
+        pwHint('pw-new2', '새 비밀번호와 확인이 일치하지 않습니다.');
+    } else {
+        pwHint('pw-new2', '일치합니다.', 'good');
+    }
+}
+
+/** 창 아래 한 줄. 칸에 매달 수 없는 것(연결 실패·성공 알림)만 여기로 온다. */
+function pwMsg(text, ok) {
+    const el = $('pw-msg');
+    el.textContent = text;
+    el.hidden = !text;
+    el.classList.toggle('ok', !!ok);
+}
+
+/**
+ * 비밀번호를 바꾼다.
+ *
+ * ★ 화면에서도 한 번 거른다. 서버가 같은 것을 다시 보므로 없어도 도는데, 두 칸이
+ *   다른 것을 <b>서버를 한 번 다녀와서</b> 알려주면 그 사이 화면이 멎은 것처럼 보인다.
+ *   실제로 막는 것은 서버다 — 화면 검사는 빠르게 알려주는 용도지 방어가 아니다.
+ */
+async function submitPw(e) {
+    e.preventDefault();
+
+    const cur = pwVerified;
+    const nw  = $('pw-new').value;
+    const nw2 = $('pw-new2').value;
+
+    /*
+      ★ 1단계를 안 거치고 이 함수에 닿은 경우다. 화면을 조작하면 만들 수 있는 상태라
+      막아두지만, 진짜 관문은 서버다 — 여기서 통과시켜도 서버가 빈 비밀번호로 대조해 떨어뜨린다.
+    */
+    if (!cur) {
+        resetPw();
+        pwMsg('현재 비밀번호부터 확인해 주세요.');
+        $('pw-current').focus();
+        return;
+    }
+
+    /*
+      빈 칸만 여기서 본다. 값이 들어 있는 칸의 판정은 validatePw 가 <b>이미 화면에 띄워둔</b>
+      상태라, 여기서 또 적으면 같은 말이 두 군데 뜬다.
+
+      빈 칸은 반대로 여기서만 본다 — 아직 안 친 칸에 '입력해 주세요' 를 미리 띄우면
+      단계를 넘어온 순간부터 빨간 줄이 서 있게 된다.
+    */
+    if (!nw) {
+        pwHint('pw-new', '새 비밀번호를 입력해 주세요.');
+        $('pw-new').focus();
+        return;
+    }
+    if (nw === cur) {
+        pwHint('pw-new', '지금 쓰는 비밀번호와 같습니다.');
+        $('pw-new').focus();
+        return;
+    }
+    if (nw !== nw2) {
+        pwHint('pw-new2', '새 비밀번호와 확인이 일치하지 않습니다.');
+        $('pw-new2').focus();
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('currentPassword', cur);
+    body.set('newPassword', nw);
+    body.set('newPasswordConfirm', nw2);
+
+    const btn = $('pw-submit');
+    btn.disabled = true;
+    pwMsg('');
+
+    try {
+        const res = await fetch('/api/mypage/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+            /*
+              ★ 서버가 <b>어느 칸</b>인지까지 알려준다(fieldError). 메시지 글자를 뒤져서
+              칸을 고르지 않는 이유는, 그러면 문구를 다듬는 순간 조용히 어긋나기 때문이다.
+
+              여기까지 오는 칸별 사유는 사실상 '현재 비밀번호가 틀림' 하나다 —
+              나머지 둘은 치는 동안 이미 걸러진다. 그래도 서버가 마지막 관문이라 그대로 받는다.
+            */
+            const msg = data.message || '비밀번호를 바꾸지 못했습니다.';
+            const field = { currentPassword: 'pw-current',
+                            newPassword: 'pw-new',
+                            newPasswordConfirm: 'pw-new2' }[data.field];
+
+            if (field) {
+                pwHint(field, msg);
+                $(field).focus();
+                $(field).select();
+            } else {
+                pwMsg(msg);
+            }
+            btn.disabled = false;
+            return;
+        }
+
+        /*
+          ★ 창을 바로 닫지 않는다. 여기는 왼쪽 목록에 <b>바뀐 것이 드러나지 않는</b>
+          유일한 항목이다(비밀번호 칸은 언제나 ●●●●●●●●). 닫아버리면 정말 바뀌었는지
+          확인할 방법이 없어서, 성공했다는 말을 이 자리에서 남기고 잠시 뒤에 닫는다.
+
+          ★ 칸은 <b>지금 곧바로</b> 비운다. 닫히기까지의 1.2초 동안 방금 정한 비밀번호가
+            화면에 남아 있을 이유가 없다(closePw 가 나머지를 마저 치운다).
+        */
+        pwVerified = '';
+        $('pw-new').value = '';
+        $('pw-new2').value = '';
+        $('pw-form2').hidden = true;
+
+        pwMsg(data.message || '비밀번호가 변경되었습니다.', true);
+        setTimeout(closePw, 1200);
+
+    } catch {
+        pwMsg('서버에 연결하지 못했습니다.');
+        btn.disabled = false;
+    }
 }

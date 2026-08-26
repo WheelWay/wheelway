@@ -42,13 +42,16 @@ public final class ManualEdges {
      * 스냅·매칭 결과. 화면과 로그에 무엇이 반영되고 무엇이 실패했는지 알려주려고 센다.
      *
      * @param splitNodes 붙일 노드가 없어 엣지를 쪼개 만든 노드 수
+     * @param nextId     <b>아직 아무도 안 쓴 다음 합성 ID.</b> 뒤이어 합성물을 더 만드는 쪽
+     *                   ({@link SidewalkConnector})이 여기서부터 이어 써야 한다
      */
     public record Result(int removed, int added, int splitNodes,
                          Map<Long, String> problemById,
-                         Set<Long> addedEdgeIds, Set<Long> addedNodeIds) {
+                         Set<Long> addedEdgeIds, Set<Long> addedNodeIds,
+                         long nextId) {
 
         public Result(int removed, int added, int splitNodes, Map<Long, String> problemById) {
-            this(removed, added, splitNodes, problemById, Set.of(), Set.of());
+            this(removed, added, splitNodes, problemById, Set.of(), Set.of(), -1L);
         }
 
         /**
@@ -224,7 +227,7 @@ public final class ManualEdges {
         }
         }
 
-        return new Result(removed, added, splits, problems, addedEdgeIds, addedNodeIds);
+        return new Result(removed, added, splits, problems, addedEdgeIds, addedNodeIds, id[0]);
     }
 
     /**
@@ -295,7 +298,7 @@ public final class ManualEdges {
         }
 
         return new Result(removed, prev.added(), prev.splitNodes(), problems,
-                prev.addedEdgeIds(), prev.addedNodeIds());
+                prev.addedEdgeIds(), prev.addedNodeIds(), prev.nextId());
     }
 
     /** 노드를 다시 쓸 거리(m). 연달아 이을 때 같은 자리를 다시 찍으면 이어지게 하는 값이다. */

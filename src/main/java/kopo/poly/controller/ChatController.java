@@ -101,7 +101,7 @@ public class ChatController {
             log.warn("음성 업로드 읽기 실패", e);
             return ResponseEntity.ok(new IChatService.Answer(
                     "녹음을 받지 못했습니다. 다시 말씀해 주세요.",
-                    "", null, false, null, null, null, 0, 0, false));
+                    "", null, false, null, null, null, 0, 0, false, "UNKNOWN", false));
         }
 
         long begin = System.currentTimeMillis();
