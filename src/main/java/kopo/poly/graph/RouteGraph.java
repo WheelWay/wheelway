@@ -76,8 +76,20 @@ public final class RouteGraph {
     /** 덩어리 크기(큰 것부터). */
     private final List<Integer> componentSizes;
 
+    /** 인덱스 → 보도 엣지가 붙은 노드인가. 스냅이 차도 중심선을 물지 않게 하는 데 쓴다. */
+    private final boolean[] walkNode;
+
+    /**
+     * 보도 노드를 이만큼 더 멀어도 먼저 잡는다(m). 0 이면 예전처럼 무조건 최단이다.
+     *
+     * <p>너무 키우면 <b>길 건너편 보도</b>를 물어 무단횡단을 시킨다. 왕복 4차선의
+     * 반대편 보도가 대략 30m 이므로 그보다 작아야 한다.
+     */
+    private final double preferWalkM;
+
     private RouteGraph(String regionId, long[] nodeIds, double[] lats, double[] lons,
-                       Map<Long, Integer> indexOf, Edge[][] adjacency, int edgeCount, int droppedEdgeCount) {
+                       Map<Long, Integer> indexOf, Edge[][] adjacency, int edgeCount, int droppedEdgeCount,
+                       double preferWalkM) {
         this.regionId = regionId;
         this.nodeIds = nodeIds;
         this.lats = lats;
@@ -86,6 +98,9 @@ public final class RouteGraph {
         this.adjacency = adjacency;
         this.edgeCount = edgeCount;
         this.droppedEdgeCount = droppedEdgeCount;
+
+        this.walkNode = markWalkNodes(adjacency);
+        this.preferWalkM = Math.max(0.0, preferWalkM);
 
         this.componentOf = new int[nodeIds.length];
         this.componentSizes = new ArrayList<>();
@@ -101,7 +116,8 @@ public final class RouteGraph {
      *               admissible 하지 않게 되어 최적해 보장이 깨진다
      */
     public static RouteGraph build(String regionId, List<NodeDTO> nodes, List<EdgeDTO> edges,
-                                   java.util.function.ToDoubleFunction<String> weight) {
+                                   java.util.function.ToDoubleFunction<String> weight,
+                                   double preferWalkM) {
         int n = nodes.size();
         long[] nodeIds = new long[n];
         double[] lats = new double[n];
@@ -147,7 +163,35 @@ public final class RouteGraph {
         }
 
         return new RouteGraph(regionId, nodeIds, lats, lons, indexOf, adjacency,
-                usable, edges.size() - usable);
+                usable, edges.size() - usable, preferWalkM);
+    }
+
+    /**
+     * 보도로 볼 {@code highway} 값.
+     *
+     * <p>가중치 표와 따로 두는 이유: 저쪽은 '걷기 얼마나 힘든가' 이고 이쪽은
+     * <b>'차도 한복판인가 아닌가'</b> 다. {@code primary} 는 휠체어에 편해서 가중치가
+     * 1.3 으로 낮지만 그 노드는 <b>왕복 4차선 중심선</b>이다. 거기에 출발·도착을
+     * 붙이면 안 된다.
+     *
+     * <p>{@code connector} 는 {@link SidewalkConnector} 가 차도 교차로와 보도를 이으려고
+     * 만든 엣지다. 그 끝은 보도 쪽이므로 보도로 친다.
+     */
+    private static final Set<String> WALK_HIGHWAYS =
+            Set.of("footway", "pedestrian", "path", "crossing", "connector", "living_street");
+
+    /** 보도 엣지가 붙은 노드 표시. 엣지의 highway 로 판단한다(따로 저장하는 값이 아니다). */
+    private static boolean[] markWalkNodes(Edge[][] adjacency) {
+        boolean[] out = new boolean[adjacency.length];
+        for (int i = 0; i < adjacency.length; i++) {
+            for (Edge e : adjacency[i]) {
+                if (e.highway() != null && WALK_HIGHWAYS.contains(e.highway())) {
+                    out[i] = true;
+                    out[e.toIndex()] = true;
+                }
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ 조회
@@ -243,7 +287,7 @@ public final class RouteGraph {
      */
     public int snapInComponent(double lat, double lon, double maxDistanceM, int componentId) {
         int best = -1;
-        double bestM = maxDistanceM;
+        double bestScore = maxDistanceM + preferWalkM;
 
         for (int i = 0; i < nodeIds.length; i++) {
             if (adjacency[i].length == 0) {
@@ -253,8 +297,23 @@ public final class RouteGraph {
                 continue;
             }
             double d = haversineM(lat, lon, lats[i], lons[i]);
-            if (d <= bestM) {
-                bestM = d;
+            if (d > maxDistanceM) {
+                continue;
+            }
+            /*
+              ★ 가장 가까운 노드가 아니라 <b>보도를 우대한 거리</b>로 고른다.
+
+              실측(청주 푸르지오캐슬 · 2026-08-26): 정류장으로 가는 도보 경로의 끝점이
+              <b>차도선 위 0.0m</b> 였고 보도는 13~15m 옆에 있었다. 보도 노드는
+              20~50m 간격인데 차도 중심선 노드는 촘촘해서 늘 중심선이 이긴다.
+              그래서 바로 옆에 보도가 그려져 있는데도 경로가 차도에서 끝난다.
+
+              차도 노드에만 preferWalkM 벌점을 준다. 보도가 그 차이 안에 있으면 보도가
+              이기고, 보도가 아예 없는 곳에서는 벌점이 모두에게 같아 예전과 똑같다.
+            */
+            double score = walkNode[i] ? d : d + preferWalkM;
+            if (score <= bestScore) {
+                bestScore = score;
                 best = i;
             }
         }

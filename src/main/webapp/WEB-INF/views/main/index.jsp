@@ -18,7 +18,10 @@
         <nav class="header-actions<%= isLoggedIn ? " is-member" : "" %>" aria-label="사용자 메뉴">
             <% if (isLoggedIn) { %>
                 <a class="header-button" href="/user/logout">로그아웃</a>
-                <button class="header-button my-page-button" type="button">마이페이지</button>
+                <%-- 마이페이지는 지도 화면의 MY 탭이다. ?tab= 은 [버스]가 이미 쓰는 길이다.
+                     <button> 이었을 때는 핸들러가 없어 눌러도 아무 일도 안 일어났다.
+                     같은 줄의 로그아웃과 같은 <a> 라 .header-button 모양도 그대로다. --%>
+                <a class="header-button my-page-button" href="/map.html?tab=my">마이페이지</a>
             <% } else { %>
                 <a id="openLoginModal" class="header-button" href="#loginModal">로그인</a>
                 <a class="header-button" href="/user/userRegForm">회원가입</a>
@@ -122,6 +125,7 @@
                         <a href="#loginModal" data-modal-panel="findIdPanel">아이디 찾기</a>
                         <a href="#loginModal" data-modal-panel="findPasswordPanel">비밀번호 찾기</a>
                     </div>
+                    <p id="loginErrorMessage" class="modal-login-error" role="alert"></p>
                     <button class="modal-login-submit" type="submit">로그인하기</button>
                 </form>
             </div>
@@ -250,6 +254,7 @@
     const modalPanels = document.querySelectorAll('.modal-panel');
 
     function showModalPanel(panelId) {
+        clearLoginError();
         modalPanels.forEach(panel => panel.classList.toggle('is-active', panel.id === panelId));
         loginModalCard.classList.toggle('is-compact', panelId !== 'loginPanel');
         loginModalCard.classList.toggle('is-password-search', panelId === 'findPasswordPanel');
@@ -286,10 +291,27 @@
     loginModal.addEventListener('click', event => { if (event.target === loginModal) closeLoginModal(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeLoginModal(); });
 
+    /*
+      로그인 실패는 alert 창이 아니라 버튼 바로 위 빨간 글씨로 보여준다.
+      메시지는 서버가 준 문자열이라 textContent 로만 넣는다.
+    */
+    const loginErrorMessage = document.getElementById('loginErrorMessage');
+    function showLoginError(message, focusTarget) {
+        loginErrorMessage.textContent = message;
+        loginErrorMessage.classList.add('is-visible');
+        if (focusTarget) focusTarget.focus();
+    }
+    function clearLoginError() {
+        loginErrorMessage.textContent = '';
+        loginErrorMessage.classList.remove('is-visible');
+    }
+    [modalUserId, modalPassword].forEach(input => input.addEventListener('input', clearLoginError));
+
     modalLoginForm.addEventListener('submit', async event => {
         event.preventDefault();
-        if (modalUserId.value.trim() === '') { alert('아이디를 입력하세요.'); modalUserId.focus(); return; }
-        if (modalPassword.value === '') { alert('비밀번호를 입력하세요.'); modalPassword.focus(); return; }
+        clearLoginError();
+        if (modalUserId.value.trim() === '') { showLoginError('아이디를 입력하세요.', modalUserId); return; }
+        if (modalPassword.value === '') { showLoginError('비밀번호를 입력하세요.', modalPassword); return; }
         try {
             const response = await fetch('/user/loginProc', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}, body: new URLSearchParams(new FormData(modalLoginForm)) });
             const data = await response.json();
@@ -298,8 +320,8 @@
                 else localStorage.removeItem('wheelway.savedUserId');
                 location.href = '/';
             }
-            else { alert(data.msg); modalUserId.focus(); }
-        } catch (error) { alert('서버에 연결하지 못했습니다.'); }
+            else { showLoginError(data.msg, modalUserId); }
+        } catch (error) { showLoginError('서버에 연결하지 못했습니다.', null); }
     });
 
     /*

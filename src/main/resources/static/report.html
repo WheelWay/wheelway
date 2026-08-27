@@ -7,7 +7,7 @@
     <!--
       사용자용 제보 화면.
 
-      골격은 admin.html 과 같다(왼쪽 패널 · 오른쪽 상자 · 지도). 같은 일을 하는 화면이
+      골격은 관리자 화면(/admin)과 같다(왼쪽 패널 · 오른쪽 상자 · 지도). 같은 일을 하는 화면이
       둘로 갈리면 배우는 것도 둘이 되므로 일부러 맞췄다.
 
       다른 점은 '뺀 것'뿐이다.
@@ -53,7 +53,7 @@
             cursor: help;
         }
 
-        /* 제보. 신호등 색이 곧 통행 가능 여부다. admin.html · map.html 과 같은 색을 쓴다. */
+        /* 제보. 신호등 색이 곧 통행 가능 여부다. 관리자 화면 · map.html 과 같은 색을 쓴다. */
         .rep {
             width: 13px; height: 13px; border-radius: 50%;
             border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
@@ -459,7 +459,7 @@
         const color = sevColor(sev);
         const radius = rpRadius ?? defaultRadiusM;
 
-        // admin.html 과 같은 엔드포인트다. 이름만 공사용이고 안에서 도는 것은
+        // 관리자 화면과 같은 엔드포인트다. 이름만 공사용이고 안에서 도는 것은
         // 서버의 매칭 규칙 그 자체라, 화면에 보이는 것과 실제 차단이 어긋나지 않는다.
         const res = await fetch(`/api/construction/preview?lat=${rpPos.getLat()}`
             + `&lng=${rpPos.getLng()}&radiusM=${radius}`).then(r => r.json());

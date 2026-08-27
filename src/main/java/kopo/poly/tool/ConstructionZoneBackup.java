@@ -30,7 +30,7 @@ import java.util.Properties;
  * <p>{@link ConstructionZoneLoader} 와 마찬가지로 Spring Bean 이 아니고 main 메서드로만 실행한다.
  *
  * <h3>왜 필요한가</h3>
- * CONSTRUCTION_ZONES 에는 지오코딩 원본을 보관하는 컬럼이 없다. {@code /admin.html} 의 저장은
+ * CONSTRUCTION_ZONES 에는 지오코딩 원본을 보관하는 컬럼이 없다. {@code /admin} 의 저장은
  * LATITUDE/LONGITUDE/BLOCK_RADIUS_M 을 그대로 덮어쓰는 UPDATE 라서, 한 번 저장하면
  * 그 전 값으로 되돌릴 수단이 없다. 유일한 대안인 {@code ConstructionZoneLoader load --force} 는
  * region 전체를 지우고 다시 넣기 때문에 <b>수동 수정이 전부 날아가고 ID 도 새로 매겨진다</b>.
@@ -63,7 +63,7 @@ import java.util.Properties;
  * 복원은 {@code --force} 없이는 미리보기만 한다.
  *
  * <p><b>복원 후에는 서버의 차단 Set 을 다시 계산해야 반영된다.</b> 서버를 재기동하거나,
- * {@code /admin.html} 에서 아무 공사나 값을 바꾸지 않고 저장하면 된다.
+ * {@code /admin} 에서 아무 공사나 값을 바꾸지 않고 저장하면 된다.
  */
 public final class ConstructionZoneBackup {
 
@@ -197,7 +197,7 @@ public final class ConstructionZoneBackup {
         sb.append("--\n");
         sb.append("--   DB 클라이언트가 있으면 이 파일을 그대로 실행해도 된다.\n");
         sb.append("--   복원 후에는 서버의 차단 Set 을 다시 계산해야 반영된다 —\n");
-        sb.append("--   서버를 재기동하거나, /admin.html 에서 아무 공사나 값을 바꾸지 않고 저장한다.\n");
+        sb.append("--   서버를 재기동하거나, /admin 에서 아무 공사나 값을 바꾸지 않고 저장한다.\n");
         sb.append("-- ============================================================\n\n");
 
         for (Row r : rows) {
@@ -303,11 +303,11 @@ public final class ConstructionZoneBackup {
             return;
         }
 
-        // 복원은 '지금 DB' 를 '파일 시점' 으로 되돌린다. 그 사이에 누가 /admin.html 에서
+        // 복원은 '지금 DB' 를 '파일 시점' 으로 되돌린다. 그 사이에 누가 /admin 에서
         // 저장했다면 그 수정도 같이 사라진다. 화면을 열어둔 채 복원하면 실제로 이렇게 된다.
         System.out.println();
         System.out.println("[주의] 파일을 뜬 뒤에 저장된 수정이 있다면 그것도 되돌아갑니다.");
-        System.out.println("       /admin.html 을 열어둔 사람이 없는지 확인하세요.");
+        System.out.println("       /admin 을 열어둔 사람이 없는지 확인하세요.");
         System.out.println();
 
         Properties app = readProperties();
@@ -344,7 +344,7 @@ public final class ConstructionZoneBackup {
         }
         System.out.println();
         System.out.println("차단 Set 을 다시 계산해야 반영됩니다 — 서버 재기동, 또는");
-        System.out.println("/admin.html 에서 아무 공사나 값을 바꾸지 않고 저장하세요.");
+        System.out.println("/admin 에서 아무 공사나 값을 바꾸지 않고 저장하세요.");
     }
 
     // --------------------------------------------------------- 공통

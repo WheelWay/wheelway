@@ -72,6 +72,18 @@ public class ChatService implements IChatService {
     @Value("${wheelway.walk-default-m-per-min}")
     private double walkSpeed;
 
+    /**
+     * 이 거리(m)를 넘을 때만 수단을 되묻는다.
+     *
+     * <p><b>짧으면 묻지 않는다.</b> 300m 앞에 두고 '버스로 갈까요 택시로 갈까요' 를 물으면
+     * 그냥 성가시다 — 정류장까지 걸어가 기다리는 시간을 넣으면 그 거리에서는 버스가
+     * 반드시 진다({@code TransitResultDTO} 주석의 논지 그대로다).
+     *
+     * <p>되묻기는 공짜가 아니라 <b>한 번 더 누르게 하는 일</b>이다. 물을 값이 있을 때만 묻는다.
+     */
+    @Value("${wheelway.chat-ask-mode-over-m}")
+    private int askModeOverM;
+
     /** 지역 전체 정류장을 한 번에 받을 때의 상한. 청주가 2,709곳이라 넉넉히 잡는다. */
     private static final int STOP_POOL = 4000;
 
@@ -134,7 +146,8 @@ public class ChatService implements IChatService {
             return new Answer(
                     "출발지를 먼저 정해야 합니다.\n왼쪽 위 [집] 을 눌러 집 주소를 등록하시거나, "
                             + "현재 위치를 켜고 다시 말씀해 주세요.",
-                    said, null, false, null, null, null, 0, 0, true);
+                    said, null, false, null, null, null, 0, 0, true,
+                    ILlmClient.Mode.UNKNOWN.name(), false);
         }
 
         // ── ② 목적지 이름. 모델이 하는 일은 여기까지다.
@@ -145,7 +158,7 @@ public class ChatService implements IChatService {
         } catch (LlmUnavailableException e) {
             // 한도(429)·타임아웃·키 없음. 챗봇을 멈추지 않고 규칙 기반으로 떨어진다.
             log.warn("목적지 해석 실패, 규칙 기반으로 진행합니다: {}", e.getMessage());
-            picked = new ILlmClient.Destination(fallbackDestination(said), true);
+            picked = new ILlmClient.Destination(fallbackDestination(said), true, fallbackMode(said));
         }
 
         if (!picked.matched() || picked.destination().isBlank()) {
@@ -157,7 +170,34 @@ public class ChatService implements IChatService {
         double[] end = locate(picked.destination());
         if (end == null) {
             return new Answer("'" + picked.destination() + "' 의 위치를 찾지 못했습니다.",
-                    said, picked.destination(), false, null, null, null, 0, 0, false);
+                    said, picked.destination(), false, null, null, null, 0, 0, false,
+                    picked.mode().name(), false);
+        }
+
+        /*
+          ── ③.5 어떻게 갈 것인가.
+
+          ★ 버스·택시는 여기서 갈라져 나간다. 도보 경로를 굳이 찾지 않는다 —
+            버스 탭은 /api/bus/plan 으로 자기 안을 따로 만들고, 택시 탭은 애초에
+            출발·도착과 무관하다(우리가 차를 부르는 것이 아니다). 여기서 Dijkstra 를
+            한 번 돌려봐야 아무도 안 보는 선이 된다.
+        */
+        ILlmClient.Mode mode = picked.mode();
+
+        if (mode == ILlmClient.Mode.TAXI) {
+            return new Answer(
+                    "장애인콜택시는 저희가 대신 부를 수 없습니다.\n"
+                            + "[택시] 에서 어디로 연락하고 어떻게 신청하는지 알려드릴게요.",
+                    said, picked.destination(), true, start, end, null, 0, 0, false,
+                    mode.name(), false);
+        }
+
+        if (mode == ILlmClient.Mode.BUS) {
+            return new Answer(
+                    "'" + picked.destination() + "' 까지 가는 버스를 찾아볼게요.\n"
+                            + "[버스] 에 저상버스로 가는 방법이 뜹니다.",
+                    said, picked.destination(), true, start, end, null, 0, 0, false,
+                    mode.name(), false);
         }
 
         // ── ④ 길찾기. 거리·시간은 전부 여기서 나온다.
@@ -170,19 +210,52 @@ public class ChatService implements IChatService {
         }
 
         if (!RouteResultDTO.STATUS_SUCCESS.equals(route.getResultStatus())) {
-            // '경로없음' 은 오류가 아니다. 계단·공사로 막혀 정말 못 가는 경우가 있다.
+            /*
+              '경로없음' 은 오류가 아니다. 계단·공사로 막혀 정말 못 가는 경우가 있다.
+
+              ★ 그리고 여기가 <b>수단을 물어야 할 가장 중요한 자리</b>다.
+
+              걸어서 못 가는 것과 갈 수 없는 것은 전혀 다른데, 전에는 여기서 대화가 끝나
+              사용자가 '이 서비스로는 못 가는 곳' 으로 읽었다. 걸어서 막힌 길도 버스나
+              콜택시로는 간다 — 오히려 그 사람에게 가장 필요한 답이 그것이다.
+
+              도보 경로가 없으므로 path 는 null 이고, 화면은 그것을 보고 [도보] 를 빼고
+              [버스]·[택시] 만 낸다.
+            */
             return new Answer(
-                    "'" + picked.destination() + "' 까지 휠체어로 갈 수 있는 길을 찾지 못했습니다.\n"
-                            + "계단이나 공사로 막혀 있을 수 있습니다.",
-                    said, picked.destination(), true, start, end, null, 0, 0, false);
+                    "'" + picked.destination() + "' 까지 휠체어로 걸어갈 수 있는 길을 찾지 못했습니다.\n"
+                            + "계단이나 공사로 막혀 있을 수 있습니다.\n"
+                            + "버스나 콜택시로 가는 방법을 볼까요?",
+                    said, picked.destination(), true, start, end, null, 0, 0, false,
+                    ILlmClient.Mode.UNKNOWN.name(), true);
         }
 
         int minutes = minutesFor(route.getDistanceM());
 
+        /*
+          ★ 수단을 모르면 되묻는다 — 단, 멀 때만.
+
+          '청주시청으로 가주세요' 만으로는 걸어갈지 버스를 탈지 알 수 없다. 그런데도
+          전에는 늘 도보로 안내했다. 2km 를 그렇게 안내하면 '약 30분입니다' 가 되는데,
+          그 사람이 물어본 것은 '어떻게 가야 하나' 였지 '걸으면 몇 분인가' 가 아니다.
+
+          ★ 도보 경로를 그대로 담아 보낸다. 사용자가 [도보] 를 고르면 화면이 이미 가진
+            것을 그리면 되므로 서버를 다시 부르지 않는다 — 되묻기 때문에 왕복이 한 번
+            더 늘면 되묻기가 손해가 된다.
+        */
+        if (mode == ILlmClient.Mode.UNKNOWN && route.getDistanceM() >= askModeOverM) {
+            return new Answer(
+                    question(picked.destination(), route.getDistanceM(), minutes),
+                    said, picked.destination(), true,
+                    start, end, route.getPath(), route.getDistanceM(), minutes, false,
+                    mode.name(), true);
+        }
+
         return new Answer(
                 sentence(picked.destination(), route.getDistanceM(), minutes),
                 said, picked.destination(), true,
-                start, end, route.getPath(), route.getDistanceM(), minutes, false);
+                start, end, route.getPath(), route.getDistanceM(), minutes, false,
+                ILlmClient.Mode.WALK.name(), false);
     }
 
     // ------------------------------------------------------------------ ① 출발지
@@ -300,6 +373,36 @@ public class ChatService implements IChatService {
         return t.isBlank() ? utterance.trim() : t;
     }
 
+    /**
+     * 모델을 못 불렀을 때의 수단. <b>여기서만 규칙으로 본다.</b>
+     *
+     * <p><b>왜 평소에는 규칙을 안 쓰는가</b>: 이 판단에는 함정이 있다.
+     * {@code 버스터미널로 가주세요} 는 버스를 타겠다는 말이 아니라 <b>목적지 이름</b>이다.
+     * 글자만 보면 그 둘을 못 가른다 — 그건 문장을 읽어야 아는 것이고, 그래서 평소에는
+     * 모델이 한다. 여기는 모델이 죽었을 때의 자리라 아래처럼 이름부터 지우고 본다.
+     *
+     * <p>애매하면 {@link ILlmClient.Mode#UNKNOWN} 이다. 틀리게 정하는 것보다 되묻는 것이 낫다 —
+     * 되묻기는 버튼 한 번이고, 틀린 수단은 헛걸음이다.
+     */
+    private static ILlmClient.Mode fallbackMode(String utterance) {
+        String t = utterance.replaceAll("\s+", "");
+
+        // ★ 수단으로 읽으면 안 되는 '이름' 부터 지운다. 지우고도 남아 있어야 진짜 수단이다.
+        t = t.replaceAll("(시외|고속|시내)?버스(터미널|정류장|정류소|승강장|차고지)", "")
+             .replaceAll("택시(승강장|정류장|타는곳)", "");
+
+        if (t.contains("택시")) {
+            return ILlmClient.Mode.TAXI;
+        }
+        if (t.contains("버스")) {
+            return ILlmClient.Mode.BUS;
+        }
+        if (t.contains("걸어") || t.contains("도보") || t.contains("걸을") || t.contains("걷")) {
+            return ILlmClient.Mode.WALK;
+        }
+        return ILlmClient.Mode.UNKNOWN;
+    }
+
     // ------------------------------------------------------------------ ③ 좌표
 
     /**
@@ -377,15 +480,30 @@ public class ChatService implements IChatService {
      * <p>'약' 을 붙인다. 휠체어 속도는 개인차가 커서 화면 다른 곳도 전부 그렇게 적는다.
      */
     private static String sentence(String destination, double distanceM, int minutes) {
-        long m = Math.round(distanceM);
-        String dist = (m >= 1000)
-                ? String.format("%.1fkm", m / 1000.0)
-                : m + "m";
-        return destination + "까지 약 " + minutes + "분입니다. (" + dist + ")\n"
+        return destination + "까지 약 " + minutes + "분입니다. (" + distance(distanceM) + ")\n"
                 + "계단과 지하통로를 뺀 길로 안내했습니다.";
     }
 
+    /**
+     * 수단을 되물을 때의 문장.
+     *
+     * <p><b>도보 숫자를 먼저 보여주고 묻는다.</b> 그냥 "어떻게 가시겠어요?" 만 물으면
+     * 무엇을 견주어 고르라는 것인지 알 수 없다 — 2.4km 라는 것을 알아야 걸을지 말지
+     * 정할 수 있고, 그 값은 이미 우리가 갖고 있다(되물으려고 탐색을 미루지 않는 이유).
+     */
+    private static String question(String destination, double distanceM, int minutes) {
+        return destination + "까지 어떻게 가시겠어요?\n"
+                + "걸어가면 약 " + minutes + "분입니다. (" + distance(distanceM) + ")";
+    }
+
+    /** 사람이 읽는 거리. 1km 부터는 km 로 접는다. */
+    private static String distance(double distanceM) {
+        long m = Math.round(distanceM);
+        return (m >= 1000) ? String.format("%.1fkm", m / 1000.0) : m + "m";
+    }
+
     private static Answer fail(String message, String said) {
-        return new Answer(message, said, null, false, null, null, null, 0, 0, false);
+        return new Answer(message, said, null, false, null, null, null, 0, 0, false,
+                ILlmClient.Mode.UNKNOWN.name(), false);
     }
 }

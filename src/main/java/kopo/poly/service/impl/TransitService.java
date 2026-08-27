@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,6 +22,7 @@ import kopo.poly.dto.TransitResultDTO;
 import kopo.poly.service.IBusService;
 import kopo.poly.service.IRouteService;
 import kopo.poly.service.ITransitService;
+import kopo.poly.util.CmmUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -125,6 +127,17 @@ public class TransitService implements ITransitService {
         shortlist.removeIf(l -> l.board().stopId().equals(l.alight().stopId()));
         shortlist.sort(java.util.Comparator.comparingDouble(l -> preScore(l, straight)));
 
+        /*
+          ★ 점수순 그대로 두면 안 된다. 아래 ⑤ 가 PRERANK_KEEP 번만 재고 끊는데,
+            한 노선이 정류장을 촘촘히 지나면 상위 6개가 <b>전부 그 노선</b>이 된다.
+            다른 노선은 재보지도 못한 채 떨어지고, 목록이 같은 번호로만 채워진다.
+            (청주 푸르지오캐슬 → 시청: 844 · 911 · 873 · 842 가 다 서는데 844 만 남았다)
+
+            그래서 노선을 돌아가며 한 개씩 다시 세운다. 버리는 것은 없고 순서만 바꾼다 —
+            같은 예산으로 노선 수만큼 다른 안을 재보게 된다.
+        */
+        shortlist = spreadByRoute(shortlist);
+
         // ⑤ 2차 — 살아남은 것만 진짜 경로로 잰다.
         Map<String, TransitPlanDTO.Leg> walkCache = new HashMap<>();
         Set<String> seenPair = new HashSet<>();
@@ -143,11 +156,16 @@ public class TransitService implements ITransitService {
                 break;
             }
             /*
-              같은 (탈 곳, 내릴 곳) 쌍은 한 번만 낸다. 그 쌍을 지나는 노선이 여럿일 때
-              목록이 같은 그림 서너 줄로 채워지기 때문이다. 1차에서 이미 좋은 순으로
-              세워 뒀으므로 남는 것은 그중 가장 빠른 노선이다.
+              똑같은 안은 한 번만 낸다.
+
+              ★ 예전에는 (탈 곳, 내릴 곳) 만 봤다. 목록이 같은 그림으로 채워지는 것을
+                막으려던 것인데, 그 쌍을 지나는 <b>다른 노선까지</b> 같이 지웠다.
+                같은 정류장에서 844 도 타고 911 도 탈 수 있다면 그건 한 줄이 아니라
+                두 줄이다 — 기다리는 시간이 다르니까. 노선 번호까지 넣어 구분한다.
+                보여줄 때 겹치지 않게 하는 일은 pickVariety 가 맡는다.
             */
-            if (!seenPair.add(l.board().stopId() + ">" + l.alight().stopId())) {
+            if (!seenPair.add(l.board().stopId() + ">" + l.alight().stopId()
+                    + ">" + l.routeNo())) {
                 continue;
             }
 
@@ -199,7 +217,7 @@ public class TransitService implements ITransitService {
         // ⑥ 남은 것에만 '언제 오나'를 붙인다. 이 값은 정류장마다 API 를 한 번 더 보는 것이라
         //    목록 전체에 붙이면 호출이 그만큼 는다.
         List<TransitPlanDTO> plans = new ArrayList<>();
-        for (Scored s : scored.subList(0, Math.min(Math.max(1, limit), scored.size()))) {
+        for (Scored s : pickVariety(scored, Math.max(1, limit))) {
             plans.add(withWaiting(s));
         }
 
@@ -207,6 +225,90 @@ public class TransitService implements ITransitService {
                 links.size(), plans.size(), System.currentTimeMillis() - began);
 
         return new TransitResultDTO(walkOnly, plans, null);
+    }
+
+    /**
+     * 노선을 돌아가며 한 개씩 뽑아 다시 세운다. <b>버리는 것은 없고 순서만 바꾼다.</b>
+     *
+     * <p>각 노선 안에서는 들어온 순서(=점수순)를 지키므로, 결과는
+     * '노선별 1등들 → 노선별 2등들 → …' 이 된다. 앞에서 몇 개를 자르든
+     * 서로 다른 노선이 먼저 들어간다.
+     */
+    private static List<BusLinkDTO> spreadByRoute(List<BusLinkDTO> sorted) {
+        // LinkedHashMap 이라 노선이 처음 나온 순서(=그 노선의 최고 점수 순)가 유지된다.
+        Map<String, List<BusLinkDTO>> byRoute = new LinkedHashMap<>();
+        for (BusLinkDTO l : sorted) {
+            byRoute.computeIfAbsent(CmmUtil.nvl(l.routeNo()), k -> new ArrayList<>()).add(l);
+        }
+
+        List<BusLinkDTO> out = new ArrayList<>(sorted.size());
+        for (int round = 0; out.size() < sorted.size(); round++) {
+            for (List<BusLinkDTO> group : byRoute.values()) {
+                if (round < group.size()) {
+                    out.add(group.get(round));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 목록에 낼 안을 고른다. <b>줄마다 다른 점이 있어야 한다</b>는 것이 규칙이다.
+     *
+     * <p>빠른 순으로 그냥 자르면 한 노선이 목록을 다 차지한다. 같은 버스를 타는
+     * 세 가지 방법은 사용자에게 세 개의 선택지가 아니다 — 그 버스가 안 오면
+     * 세 줄이 한꺼번에 쓸모없어진다.
+     *
+     * <p>그래서 세 번에 나눠 담는다.
+     *
+     * <pre>
+     *   1) 노선 번호가 다른 것      다른 버스 = 가장 확실한 선택지
+     *   2) 타는 정류장이 다른 것    노선이 하나뿐이어도 '어디로 걸어갈까'는 고를 수 있다
+     *   3) 나머지                   위 둘로 못 채웠으면 빠른 순으로
+     * </pre>
+     *
+     * <p>2)가 필요한 이유: 노선이 하나뿐인 지역에서 1)만 쓰면 목록이 한 줄로 끝난다.
+     * 그런데 같은 버스라도 <b>타는 정류장이 다르면 걸어가는 길이 통째로 다르다</b> —
+     * 가깝지만 언덕인 곳과 멀지만 평탄한 곳 중 무엇이 나은지는 사용자가 안다.
+     * 반대로 타는 곳이 같고 내리는 곳만 다른 두 줄은 걸어가는 길이 같아서
+     * 고를 거리가 못 된다. 그건 3)으로 밀린다.
+     */
+    private static List<Scored> pickVariety(List<Scored> sorted, int limit) {
+        boolean[] taken = new boolean[sorted.size()];
+        List<Scored> out = new ArrayList<>(limit);
+
+        Set<String> usedRoutes = new HashSet<>();
+        Set<String> usedBoards = new HashSet<>();
+
+        // 1) 다른 노선
+        for (int i = 0; i < sorted.size() && out.size() < limit; i++) {
+            Scored s = sorted.get(i);
+            if (usedRoutes.add(CmmUtil.nvl(s.link().routeNo()))) {
+                out.add(s);
+                taken[i] = true;
+                usedBoards.add(s.link().board().stopId());
+            }
+        }
+
+        // 2) 다른 정류장에서 타는 것
+        for (int i = 0; i < sorted.size() && out.size() < limit; i++) {
+            Scored s = sorted.get(i);
+            if (!taken[i] && usedBoards.add(s.link().board().stopId())) {
+                out.add(s);
+                taken[i] = true;
+            }
+        }
+
+        // 3) 그래도 모자라면 빠른 순으로
+        for (int i = 0; i < sorted.size() && out.size() < limit; i++) {
+            if (!taken[i]) {
+                out.add(sorted.get(i));
+            }
+        }
+
+        // 다양성을 우선해 뽑았으니 다시 빠른 순으로 세운다. 목록은 시간순이어야 읽힌다.
+        out.sort(java.util.Comparator.comparingDouble(Scored::minutes));
+        return out;
     }
 
     /** 1차 점수. 직선거리라 실제와 다르지만, <b>순서를 정하는 데는 충분하다.</b> */
@@ -325,6 +427,24 @@ public class TransitService implements ITransitService {
     private static final double ANCHOR_SKIP_M = 1.0;
 
     /**
+     * 도보 선을 정류장까지 끌어다 붙일 수 있는 <b>최대 거리(m)</b>. 넘으면 붙이지 않는다.
+     *
+     * <p><b>왜 상한이 필요한가.</b> 정류장 좌표는 TAGO 가 <b>차도 위</b>에 찍어둔 값이다.
+     * 도보 경로는 보도에서 제대로 끝나는데, 거기서 정류장까지 직선을 이어 붙이면
+     * 그 선이 보도에서 차도로 튀어나간다. 실측 13.7m — 지도에서는 왕복 4차선을
+     * 가로지르는 선으로 보인다.
+     *
+     * <p>이음새를 없애자고 <b>차도를 건너는 그림</b>을 그리는 것은 남는 장사가 아니다.
+     * 휠체어 사용자에게 그 선은 '여기로 가라' 로 읽힌다. 몇 미터짜리 어긋남은 붙여서
+     * 없애고, 길 하나를 건너야 할 만큼 벌어졌으면 <b>벌어진 채로 둔다</b> —
+     * 그게 실제 상황이기 때문이다. 정류장이 어디인지는 지도의 정류장 표시가 말해준다.
+     *
+     * <p>버스 선({@link #anchorRide})에는 이 상한을 적용하지 않는다. 그쪽은 차도 위의
+     * 선이 차도 위의 정류장에 붙는 것이라 어긋남이 곧 오차다.
+     */
+    private static final double ANCHOR_WALK_MAX_M = 8.0;
+
+    /**
      * 좌표열의 한쪽 끝을 정류장 자리에 정확히 붙인다.
      *
      * <h3>왜 필요한가</h3>
@@ -336,6 +456,9 @@ public class TransitService implements ITransitService {
      * </pre>
      * 그래서 지도에서 <b>버스 선이 끝난 자리와 도보 선이 시작하는 자리가 어긋나 보인다.</b>
      * 사용자가 보기에 이것은 '내린 곳에서 안내가 시작되지 않는' 것으로 읽힌다.
+     *
+     * <h3>멀면 붙이지 않는다</h3>
+     * {@link #ANCHOR_WALK_MAX_M} 참고. 이음새를 지우려다 차도를 건너는 선을 그리게 된다.
      *
      * <h3>거리는 늘리지 않는다</h3>
      * 붙이는 것은 <b>선뿐이고 {@code meters} 는 그대로 둔다.</b> 이 몇 미터는 그래프가
@@ -351,7 +474,19 @@ public class TransitService implements ITransitService {
         if (leg == null) {
             return null;
         }
-        return new TransitPlanDTO.Leg(leg.meters(), anchorPath(leg.path(), lat, lng, atStart));
+
+        /*
+          너무 멀면 붙이지 않는다. 붙이는 순간 그 직선이 차도를 가로지른다 —
+          ANCHOR_WALK_MAX_M 주석 참고.
+        */
+        List<double[]> path = leg.path();
+        if (path != null && !path.isEmpty()) {
+            double[] end = atStart ? path.get(0) : path.get(path.size() - 1);
+            if (metersBetween(end[0], end[1], lat, lng) > ANCHOR_WALK_MAX_M) {
+                return leg;
+            }
+        }
+        return new TransitPlanDTO.Leg(leg.meters(), anchorPath(path, lat, lng, atStart));
     }
 
     /** {@link #anchor} 의 알맹이. 좌표열만 다룬다 — 버스 선에는 담을 {@code Leg} 가 없다. */

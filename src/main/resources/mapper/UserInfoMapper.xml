@@ -30,6 +30,29 @@
         </if>
     </select>
 
+    <!--
+      마이페이지가 쓰는 내 정보 조회.
+
+      ★ getUserId 를 재사용하지 않는다. 그쪽은 '이름 + 이메일로 아이디를 찾는' 조회라
+        찾는 방향이 정반대다(여기는 아이디를 이미 알고 값을 꺼낸다). 조건을 <if> 로
+        늘려 하나로 합치면 아이디 찾기가 '아이디만으로도 도는' 조회가 되어버린다.
+
+      EMAIL 은 AES 로 들어 있다. 푸는 것은 화면에 내보내기 직전에 컨트롤러가 한다 —
+      매퍼가 풀어 내리면 이 조회를 부르는 다른 곳이 생겼을 때 평문이 같이 따라 나간다.
+
+      PASSWORD_HASH 는 뽑지 않는다. 마이페이지는 비밀번호를 '보여주는' 화면이 아니라
+      '바꾸는' 화면이라 값을 알 필요가 없다. 대조는 getLogin 이 한다.
+    -->
+    <select id="getMyInfo" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME,
+            EMAIL,
+            WHEELCHAIR_TYPE
+        FROM USERS
+        WHERE USERNAME = #{username}
+    </select>
+
     <!-- 비밀번호 재설정 -->
     <update id="updatePassword" parameterType="UserInfoDTO">
         UPDATE USERS

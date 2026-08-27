@@ -3,7 +3,7 @@
   피그마 시안(1920x1080 기준)의 색·골격에, 카카오맵 길찾기의 흐름을 얹었다.
   데스크톱이 기준이고, 좁아지면 무너지지 않을 만큼만 대응한다.
 
-  검증용 화면인 route.html / admin.html 과 달리 이 화면은 일반 사용자가 본다.
+  검증용 화면인 route.html / 관리자 화면(/admin) 과 달리 이 화면은 일반 사용자가 본다.
   그래서 탐색 통계(방문 노드·계산 시간·스냅 거리)는 여기에 두지 않는다.
 */
 
@@ -126,14 +126,67 @@ input  { font: inherit; color: inherit; }
   둘로 나뉘어 아이콘 사이가 벌어진다.
 */
 .rail-home,
+/*
+  관리자 입구. <a> 였을 때는 누르면 바로 넘어갔지만 이제 3초를 눌러야 숫자판이 뜬다.
+  <button> 이 된 만큼 브라우저 기본 모양(테두리·배경·글꼴)을 지운다.
+*/
 .rail-admin {
+    position: relative;
     align-self: center;
     display: flex; align-items: center; justify-content: center;
     width: 40px; height: 40px;
+    padding: 0;
+    border: 0;
     border-radius: 10px;
+    background: none;
     color: var(--ink-soft);
     text-decoration: none;
+    cursor: pointer;
+    overflow: hidden;
+
+    /* 길게 누르는 버튼이라 글자 선택·확대 메뉴가 끼어들면 안 된다 */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
+
+/*
+  누르고 있는 동안 아래에서 차오른다.
+
+  얼마나 남았는지 보이지 않으면 다 차기 전에 손을 뗀다 — 그러면 이 입구는
+  아는 사람도 못 여는 문이 된다.
+  ★ transition 이 아니라 animation 이다. inline transition 을 넣는 것과 클래스를 붙이는 것이
+    같은 tick 에서 일어나면 브라우저가 전환을 시작하지 않는다(실측). 사이에 강제 reflow 를
+    끼우는 우회가 흔하지만, animation 은 클래스가 붙는 순간 그냥 시작한다.
+    누르는 시간은 JS 가 animation-duration 으로 정한다.
+*/
+.rail-admin-ring {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 100%;
+    background: var(--cream-deep);
+    pointer-events: none;
+
+    /* 평소에는 눌려 있다가 아래에서부터 펴진다.
+       height 를 0 -> 100% 로 키우면 애니메이션이 시작은 하는데 값이 0 에 머문다(실측).
+       퍼센트 높이를 보간하지 못한 것으로 보인다. scaleY 는 그런 문제가 없다. */
+    transform: scaleY(0);
+    transform-origin: bottom;
+}
+
+@keyframes rail-admin-fill {
+    from { transform: scaleY(0); }
+    to   { transform: scaleY(1); }
+}
+
+/* 손을 떼면 클래스가 빠지면서 즉시 0 으로 돌아간다 —
+   천천히 줄어들면 '조금 남았나' 싶어 다시 누르게 된다 */
+.rail-admin.is-holding .rail-admin-ring {
+    animation: rail-admin-fill linear forwards;
+}
+
+/* 아이콘이 차오르는 배경에 묻히지 않게 */
+.rail-admin svg { position: relative; }
 
 .rail-home  { margin-top: auto; margin-bottom: 6px; }
 .rail-admin { margin-bottom: 18px; }
@@ -577,10 +630,41 @@ input  { font: inherit; color: inherit; }
 /* 방금 찾은 가까운 정류장. 목록에 뜬 그것이라 눈에 띄어야 한다. */
 .bus-mk.is-near .bus-mk-pin { background: var(--route); }
 
-/* 고른 정류장. 도착 핀과 같은 색이라 설명이 필요 없다. */
+/*
+  고른 정류장 — 도착판·스톱워치가 보고 있는 곳.
+
+  ★ 예전에는 도착 핀과 같은 --end(빨강)였다. 그런데 고른 안의 타는 곳·내리는 곳도
+    빨강이 되면서 <b>같은 화면에 뜻이 다른 빨간 핀이 두 개</b> 뜨게 됐다.
+    목록에서 다른 안을 눌러보는 동안에는 둘이 갈리므로(고른 정류장은 [이 경로로] 를
+    눌러야 바뀐다) 실제로 자주 겹친다.
+
+    빨강은 '여기로 가라'(목적지 · 타는 곳 · 내리는 곳)에 내주고, 이쪽은 보라로 옮긴다.
+    '지금 보고 있는 정류장'은 가라는 말이 아니라 기준점이라 색이 달라야 맞다.
+*/
 .bus-mk.is-picked .bus-mk-pin {
-    background: var(--end);
+    background: #6a3fb5;
     width: 26px; height: 26px;
+}
+
+/*
+  고른 안이 시키는 두 정류장.
+
+  <b>정류장 핀에서 빨강은 이 둘에만 쓴다</b> — 지도에서 빨간 버스 핀을 보면
+  '저기로 가라' 하나로 읽혀야 한다. 고른 정류장(.is-picked)이 빨강을 쓰고 있었는데
+  그래서 보라로 옮겼다. 목적지 핀이 같은 계열인 것은 뜻이 같아서다(가야 할 곳).
+*/
+.bus-mk.is-plan .bus-mk-pin {
+    width: 28px; height: 28px;
+    background: #d32f2f;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, .4);
+}
+
+/* 이름표를 늘 띄운다. '어디로 가라' 가 마우스를 올려야 보이면 안내가 아니다. */
+.bus-mk.is-plan .bus-mk-label {
+    opacity: 1;
+    border-color: #d32f2f;
+    color: #b3261e;
+    font-weight: 700;
 }
 
 .bus-mk-label {
@@ -1160,7 +1244,7 @@ input  { font: inherit; color: inherit; }
 
 /* 이용자 제보. 공사와 같은 원이고 색으로만 구분한다 — 신호등 색이 곧 통행 가능 여부다.
    빨강=통행 불가(경로에서 아예 뺀다) · 노랑=고려 · 초록=통행 가능(참고정보).
-   admin.html 과 같은 색을 쓴다. 두 화면에서 같은 것이 같아 보여야 한다.
+   관리자 화면(/admin)과 같은 색을 쓴다. 두 화면에서 같은 것이 같아 보여야 한다.
 
    공사 주황(#ff9800)과 '고려' 노랑(#f9a825)이 가까운 계열이라는 문제가 남아 있다.
    모양을 달리하면 사라지지만, 우선 셋 다 점으로 보기로 했다. */
@@ -1471,13 +1555,14 @@ input  { font: inherit; color: inherit; }
 }
 
 /* 구간 세 줄. 도보와 승차의 성격이 다르다는 것을 왼쪽 색 띠로 갈라 놓는다. */
-.plan-legs { margin-top: 7px; display: flex; flex-direction: column; gap: 4px; }
+.plan-legs { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 
 .plan-leg {
-    display: grid; grid-template-columns: 54px 1fr;
-    gap: 8px; align-items: baseline;
-    font-size: 11.5px; line-height: 1.5;
-    padding-left: 7px;
+    display: grid; grid-template-columns: 66px 1fr;
+    gap: 9px; align-items: baseline;
+    /* 카드에서 실제로 읽는 것이 이 세 줄이라 요약줄(11.5px)보다 크게 둔다 */
+    font-size: 13.5px; line-height: 1.55;
+    padding-left: 9px;
     border-left: 3px solid #cfd8dc;
 }
 .plan-leg.is-walk { border-left-color: #4c8c5e; }
@@ -1485,6 +1570,12 @@ input  { font: inherit; color: inherit; }
 
 .plan-leg-time { font-weight: 700; color: var(--ink); white-space: nowrap; }
 .plan-leg-what { color: var(--ink-soft); min-width: 0; }
+
+/*
+  버스 번호. 이 카드에서 <b>사람이 정류장에서 실제로 찾는 값</b>이라 가장 진하게 둔다.
+  주변 글자가 --ink-soft 라 여기만 검정이어도 충분히 튄다.
+*/
+.plan-no { color: #111; font-weight: 800; }
 
 /*
   기다리는 시간. ★ 이 줄이 이 화면에서 가장 자주 사람의 행동을 바꾼다 —
@@ -1497,12 +1588,6 @@ input  { font: inherit; color: inherit; }
     color: #1a4a8f;
 }
 .plan-wait.is-miss { color: #a4442f; }
-
-/* 그 숫자가 어디서 왔는지. 어림한 값과 잰 값을 같은 얼굴로 내보내지 않는다. */
-.plan-src {
-    margin-top: 5px;
-    font-size: 10.5px; line-height: 1.5; color: var(--ink-soft);
-}
 
 .plan-go {
     margin-top: 8px;
@@ -1773,6 +1858,43 @@ input  { font: inherit; color: inherit; }
 .chat-msg.heard { align-self: flex-end; background: transparent; color: var(--ink-soft);
                   font-size: 12px; padding: 0 4px; }
 .chat-msg.fail { background: #fdecea; color: #b3261e; align-self: flex-start; border-bottom-left-radius: 5px; }
+
+/* ── 이동수단 되묻기 버튼 ──────────────────────────────────
+   말풍선이 아니라 <b>고를 것</b>이라 색을 다르게 준다. 봇 말풍선과 같은 크림을 쓰면
+   '읽을 것' 과 '누를 것' 이 한 덩어리로 보인다 — 흰 바탕에 테두리로 눌러야 할 것임을 낸다.
+
+   ★ 말풍선처럼 왼쪽에 붙인다. 물어본 쪽이 봇이라 답할 것도 그 아래 같은 줄에 있어야
+     시선이 안 튄다.
+
+   ★ min-height 44px 는 손가락 기준이다. 밖에서 휠체어에 앉아 태블릿을 쓰는 화면이라
+     작은 버튼은 눌리지 않는다. */
+.chat-modes {
+    align-self: flex-start;
+    /*
+      ★ 말풍선의 max-width: 82% 를 여기에 가져오지 않는다.
+        말풍선은 글줄이 너무 길어지지 않게 82% 로 묶지만, 이 줄은 글이 아니라 버튼이다.
+        똑같이 묶었더니 셋이 274px 에 안 들어가 '장애인콜택시' 만 다음 줄로 떨어졌다.
+        묶을 이유가 없는 자리라 폭을 다 쓰게 두고, 좁은 화면에서는 wrap 이 알아서 접는다.
+    */
+    display: flex; flex-wrap: wrap; gap: 8px;
+    /* 위 말풍선에 붙여 '그 물음의 답' 으로 읽히게 한다. .chat-log 의 gap 10px 을 줄인다. */
+    margin-top: -2px;
+}
+.chat-mode {
+    min-height: 44px;
+    padding: 10px 16px;
+    background: #fff;
+    color: var(--ink);
+    border: 1.5px solid var(--edge);
+    border-radius: 999px;
+    font-size: 14px; font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+}
+.chat-mode:hover { background: var(--cream-deep); border-color: var(--ink-soft); }
+.chat-mode:active { background: var(--gold); }
+.chat-mode:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* 생각 중 점 세 개 */
 .chat-dots { display: inline-flex; gap: 4px; align-items: center; height: 10px; }
@@ -2198,3 +2320,550 @@ textarea.rp2-input { resize: vertical; }
 
 .rp2-msg.ok   { background: #e8f5e9; color: #1b5e20; }
 .rp2-msg.fail { background: #ffebee; color: #b71c1c; }
+
+
+/* ── 마이페이지 ────────────────────────────────────────────────
+   왼쪽 패널은 <b>읽기 전용 목록</b>이고, 고치는 일은 지도 자리를 덮는 #my-edit 과
+   그 안에서 열리는 모달이 맡는다. 그래서 여기 있는 것은 '값을 읽기 좋게 세우는' 규칙뿐이다.
+   ------------------------------------------------------------------ */
+
+/*
+  ★ MY 패널의 제목만 키운다(다른 탭의 .section-title 은 15.5px 그대로).
+
+  이 패널은 그 아래가 '이메일 / 아이디 / …' 라벨과 값이 촘촘히 이어지는 목록이라,
+  제목이 15.5px 이면 값(14px)과 거의 같은 크기가 되어 <b>목록의 한 줄처럼</b> 읽혔다.
+  최근경로·제보 같은 다른 패널은 아래가 카드나 버튼이라 그런 혼동이 없어 건드리지 않는다.
+*/
+#pane-my .section-title {
+    font-size: 19px;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+}
+
+.my-list { margin: 0; padding: 0; }
+
+/*
+  라벨 위 · 값 아래로 쌓는다.
+
+  ★ 라벨과 값을 한 줄에 두는 모양(dt 왼쪽 / dd 오른쪽)을 먼저 해봤는데, 396px 패널에서
+    주소가 들어오면 오른쪽 칸이 서너 줄로 접히면서 라벨과 높이가 어긋난다.
+    이메일·아이디는 짧고 주소는 길어서, 한 줄 배치로는 다섯 줄의 리듬이 안 맞는다.
+*/
+.my-row {
+    padding: 18px 4px;
+    border-bottom: 1px solid var(--edge);
+}
+
+.my-row:last-child { border-bottom: 0; }
+
+.my-row dt {
+    margin-bottom: 7px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+}
+
+/*
+  ★ 주소가 길어도 자르지 않는다(말줄임 없음). 이 목록을 보는 이유가
+    '내가 어디로 등록해뒀더라' 라서, 잘린 주소는 있으나 마나다.
+
+  word-break 를 주는 것은 도로명 주소에 공백 없는 긴 토막이 섞이면
+  칸을 넘어 가로 스크롤이 생기기 때문이다.
+*/
+.my-row dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.my-note {
+    margin: 12px 4px 0;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: var(--cream-deep);
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+}
+
+.my-note[hidden] { display: none; }
+
+/*
+  [수정] — 패널에서 유일한 버튼이다. 골드로 채워 '여기서 할 일은 이것 하나' 를 보인다.
+  레일의 켜진 탭과 같은 색이라 눈으로 이어진다.
+*/
+.my-edit-open {
+    display: block;
+    width: calc(100% - 8px);
+    margin: 26px 4px 0;
+    padding: 13px 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #3a2f14;
+    font-size: 14.5px;
+    font-weight: 700;
+}
+
+.my-edit-open:hover { background: #eab63f; }
+.my-edit-open[hidden] { display: none; }
+
+/* ── 회원 기본정보 수정 — 지도 자리를 덮는다 ──────────────────
+   position:absolute + inset:0 이라 .map-area 를 통째로 가린다.
+   z-index 는 검색바(12)보다 위여야 한다 — 아래로 두면 지도는 가렸는데
+   검색바만 그 위에 남아 떠 있는, 무엇을 하는 화면인지 알 수 없는 상태가 된다.
+   ------------------------------------------------------------------ */
+.my-edit {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    overflow-y: auto;
+    background: var(--cream);
+    animation: my-edit-in .16s ease-out;
+
+    /*
+      안쪽 덩어리를 담는 그릇. align-items 를 <b>반드시</b> 준다 —
+      기본값 stretch 로 두면 덩어리가 세로로 통째로 늘어나 min-height 한도가 무의미해지고,
+      카드들이 화면 끝까지 벌어진다.
+    */
+    display: flex;
+    align-items: flex-start;
+}
+
+.my-edit[hidden] { display: none; }
+
+@keyframes my-edit-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/*
+  넓은 화면에서 칸이 끝까지 늘어나면 한 줄이 너무 길어 읽기 나쁘다 — 그래서 폭을 묶는다.
+
+  ★ 세로로는 <b>위에 맞추어 세운다</b>(margin-top 을 auto 로 두지 않는다).
+    가운데로 세워봤는데 위아래로 99px 씩 떨어져 떠 있는 것처럼 보였다 —
+    읽는 순서가 위에서 아래인 화면이라 제목이 위에 서 있는 편이 맞다.
+    가로만 auto 로 가운데 정렬한다.
+*/
+.my-edit-inner {
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+
+    /*
+      ★ 위 패딩이 크다(70px). 위 정렬로 바꾸면서 제목이 꼭대기에서 29px 밖에 안 떨어져
+      화면 모서리에 붙어 보였다. 제목은 이 화면의 머리라 앞에 숨 쉴 자리가 있어야 한다.
+      아래(36px)와 크게 다른 것은 의도한 것이다 — 아래쪽 여백은 카드가 늘어나며 알아서 생긴다.
+    */
+    padding: 70px 28px 36px;
+
+    /*
+      ★ 세로로 늘리되 <b>한도를 둔다.</b> 남는 공간은 카드와 그 안의 줄들이 나눠 갖는다.
+
+      값을 세 번 옮겨보고 정착한 자리다(2026-08-25).
+        · 제한 없음(599px)  — 위아래가 160px 씩 비어 화면이 덜 그려진 것처럼 보였다
+        · 100% (918px)      — 다 채우지만 줄 하나가 112px 까지 벌어져 지나치게 성겼다
+        · 760px             — 지금 값. 두 카드가 같은 높이(약 265px)로 서고 줄은 48px 안팎
+
+      ★ min() 인 이유: 화면이 720px 보다 짧으면 100% 쪽이 골라져 넘치지 않는다.
+        그보다 내용이 더 커지면 margin:auto 가 위 정렬로 돌아가며 스크롤이 걸린다.
+    */
+    display: flex;
+    flex-direction: column;
+    min-height: min(100%, 760px);
+}
+
+/*
+  ★ 제목은 <b>칸 전체의 가운데</b>에 선다. 닫기 버튼은 흐름에서 빼내 오른쪽 끝에 띄운다.
+
+  space-between 으로 양끝에 밀어두면 제목이 '가운데' 가 아니라 '왼쪽' 에 선다.
+  그렇다고 닫기 버튼을 그대로 둔 채 제목만 늘리면, 버튼 폭(32px)만큼 제목이
+  왼쪽으로 밀려 <b>어중간하게</b> 치우친다 — 눈에 띄는 어긋남이다.
+  position:absolute 로 버튼을 흐름에서 빼야 제목이 진짜 가운데에 온다.
+*/
+.my-edit-head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /*
+      제목과 카드를 띄운다. 붙어 있으면 제목이 첫 카드의 머리글처럼 읽힌다.
+      ★ 34px 로는 아직 붙어 보여서 64px 로 벌렸다 — 제목은 이 화면 전체의 머리지
+        '기본 정보' 카드의 머리가 아니다.
+    */
+    margin-bottom: 64px;
+}
+
+.my-edit-head h1 {
+    margin: 0;
+
+    /*
+      ★ 폰트를 명시한다. 값은 body 와 같은 스택이라 보이는 것은 그대로다 —
+        <h1> 이 어딘가에서 다른 폰트를 물려받는 일이 없도록 여기서 못 박아 둔다
+        (이 화면은 로그인 카드와 달리 auth.css 의 영향권 밖이지만, 창이 하나 더 늘면 헷갈린다).
+
+      ★ 자간을 조금 줄인다. 26px 로 키우면 글자 사이가 같이 벌어져 카드 제목(15.5px)과
+        결이 달라 보인다 — 크기만 다르고 <b>같은 계열</b>로 읽혀야 한다.
+    */
+    font-family: "Pretendard", "맑은 고딕", "Malgun Gothic", sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+/* 닫기. 모달의 것과 같은 모양이라 '닫으면 원래대로' 가 같은 뜻으로 읽힌다. */
+.my-edit-close {
+    position: absolute;
+    top: 50%; right: 0;
+    transform: translateY(-50%);
+    width: 32px; height: 32px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--ink-soft);
+}
+
+.my-edit-close:hover { color: var(--ink); border-color: #d9c4a4; }
+
+.my-card {
+    margin-bottom: 26px;
+    padding: 28px 26px;
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    background: #fff;
+
+    /*
+      ★ 두 카드를 <b>같은 높이</b>로 맞춘다.
+
+      flex-basis 가 0 인 것이 핵심이다. auto 로 두면 늘어나기 전 크기가 각자의 내용
+      높이라 줄이 셋인 기본 정보가 둘인 주소록보다 늘 크게 남는다. 0 이면 내용 높이를
+      기준에서 빼고 남는 높이를 <b>똑같이</b> 나눠 갖는다.
+
+      (2:1 로 나눠 위 카드를 크게 둔 적이 있는데, 두 카드가 같은 크기로 서는 편이
+       '같은 종류의 묶음 둘' 로 읽혀서 이쪽으로 정했다)
+
+      안쪽은 가운데로 세운다. 늘어난 만큼이 카드 <b>아래쪽에만</b> 빈칸으로 붙으면
+      카드가 잘못 그려진 것처럼 보인다.
+    */
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* 마지막 카드 아래는 .my-edit-inner 의 padding 이 받는다. 겹치면 아래만 두꺼워진다. */
+.my-card:last-child { margin-bottom: 0; }
+
+.my-card-title {
+    margin: 0 0 14px;
+    font-size: 15.5px;
+    font-weight: 700;
+    flex: 0 0 auto;      /* 제목은 늘어나지 않는다. 글자 한 줄이 세로로 벌어질 이유가 없다 */
+}
+
+/* 라벨 왼쪽 고정폭 + 값. 여기는 칸 폭이 넉넉해서 한 줄 배치가 성립한다. */
+/*
+  ★ 줄도 같이 늘어난다.
+
+  카드만 늘리면 줄 셋이 가운데 뭉치고 카드 위아래로 120px 씩 빈다 — 카드가 잘못 그려진
+  것처럼 보인다. 각 줄이 남는 높이를 나눠 가져야 <b>줄 사이가 고르게</b> 벌어진다.
+
+  align-items:center 라 줄이 커져도 라벨과 칸은 그 줄 한가운데에 그대로 선다.
+*/
+.my-field {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 13px;
+    flex: 1 1 auto;
+}
+
+.my-field:last-child { margin-bottom: 0; }
+
+.my-field label {
+    flex: 0 0 92px;
+    font-size: 13px;
+    color: var(--ink-soft);
+}
+
+/*
+  ★ readonly 이지 disabled 가 아니다. disabled 로 두면 글자가 흐려져 '값이 없는 것'
+    처럼 보인다 — 여기 온 사람은 자기 이메일·아이디를 확인하러 온 것이라 또렷해야 한다.
+    대신 바탕을 크림으로 깔아 '고치는 칸이 아니다' 를 색으로 말한다.
+*/
+.my-field input[readonly] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 11px 14px;
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    background: var(--cream-deep);
+    color: var(--ink);
+    font-size: 14px;
+    cursor: default;
+}
+
+.my-field input[readonly]:focus { outline: none; border-color: #d9c4a4; }
+
+/* 줄 안에 서는 버튼. [비밀번호 변경] 과 주소 [수정] 이 같은 모양을 쓴다. */
+.my-line-btn {
+    flex: 1 1 auto;
+    padding: 11px 16px;
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    background: var(--cream-deep);
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.my-line-btn:hover { background: #f1e5d1; border-color: #d9c4a4; }
+
+/* 주소 줄의 [수정] 은 값 오른쪽 끝에 작게 붙는다 — 줄을 먹으면 주소가 밀린다. */
+.my-line-btn.is-small {
+    flex: 0 0 auto;
+    padding: 7px 16px;
+    font-size: 13px;
+}
+
+/* 주소 한 줄: 아이콘 · 이름 · 값(늘어남) · [수정] */
+.my-addr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--edge);
+    flex: 1 1 auto;      /* .my-field 와 같은 이유 — 줄이 카드 높이를 나눠 갖는다 */
+}
+
+.my-addr:last-child { border-bottom: 0; }
+
+.my-addr-icon {
+    display: grid;
+    place-items: center;
+    width: 30px; height: 30px;
+    flex: 0 0 30px;
+    border-radius: 8px;
+    background: var(--cream-deep);
+    color: var(--ink-soft);
+}
+
+.my-addr-label {
+    flex: 0 0 68px;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+/*
+  ★ 여기서는 넘치면 자른다. 패널(.my-row dd)과 반대인데, 그쪽은 '확인하는 목록' 이고
+    이쪽은 '고치러 온 줄' 이라 한 줄 높이가 흔들리지 않는 것이 낫다.
+    전체 주소는 왼쪽 목록에 이미 다 적혀 있다.
+*/
+.my-addr-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+}
+
+/* ── 주소 지우기 ──────────────────────────────────────────────
+   ★ [등록하기] 아래에 글자만 남긴 모양으로 둔다. 채운 버튼으로 나란히 세우면
+     되돌릴 수 없는 쪽과 저장하는 쪽이 같은 무게로 보인다.
+   ------------------------------------------------------------------ */
+.place-delete {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 9px 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 13px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.place-delete:hover { color: #a12a2a; }
+.place-delete[hidden] { display: none; }
+
+/*
+  확인을 기다리는 상태. 한 번 더 누르면 지워지므로 글자만 바꾸지 않고
+  <b>모양도 함께</b> 바꾼다 — 글자만 바뀌면 눌린 것을 못 보고 또 누른다.
+*/
+.place-delete.is-armed {
+    background: rgba(198, 40, 40, .10);
+    color: #a12a2a;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+/* ── 비밀번호 변경 창 ──────────────────────────────────────────
+   place-card 와 달리 지도 칸이 없다. 한 칸짜리라 로그인 카드의 폭(460px)을 그대로 쓴다.
+   ------------------------------------------------------------------ */
+.pw-card {
+    position: relative;                                  /* 닫기 버튼의 기준 */
+    width: min(100%, 460px);
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .22);
+    animation: place-in .16s ease-out;
+}
+
+/* place-card 와 같은 이유다 — auth.css 의 order 순서표가 이 구성에 안 맞는다. */
+.pw-card .login-form-area form { display: block; }
+
+/*
+  ★ 이 한 줄이 없으면 <b>두 단계가 한꺼번에 뜬다.</b>
+
+  바로 위 규칙의 display:block 이 브라우저 기본값인 [hidden]{display:none} 을 이긴다
+  (선택자가 더 구체적이다). 그래서 JS 로 form2.hidden = true 를 걸어도 화면에서는
+  안 사라지고, 현재 비밀번호 칸 아래에 새 비밀번호 칸이 그대로 이어 붙었다.
+  display 를 손댄 자리에서는 [hidden] 도 같이 되살려 놔야 한다.
+*/
+.pw-card .login-form-area form[hidden] { display: none; }
+
+/*
+  ★ 단계가 바뀌어도 창 크기를 지키고, 내용은 세로 가운데에 세운다.
+
+  1단계는 칸이 하나뿐이라 그냥 두면 위쪽에 붙고 아래가 텅 빈다. 2단계(칸 둘)와
+  높이를 맞춰 두고 가운데 정렬하면, 넘어갈 때 창이 커졌다 작아졌다 하지 않는다 —
+  같은 창 안에서 내용만 바뀌는 것으로 읽혀야 '다음 단계' 로 이해된다.
+
+  auth.css 의 .login-form-area 는 위 패딩만 54px 로 크다(로그인 화면은 위에서부터
+  쌓이는 배치다). 가운데로 세울 것이라 위아래를 같게 준다.
+*/
+.pw-card { min-height: 400px; }
+
+.pw-card .login-form-area {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 30px 30px;
+}
+
+/* 좁은 화면: 지도 자리가 세로로 길어지므로 수정 화면의 여백만 줄인다. */
+@media (max-width: 900px) {
+    .my-edit-inner { padding: 20px 16px 28px; }
+    .my-field { flex-wrap: wrap; gap: 8px; }
+    .my-field label { flex: 0 0 100%; }
+}
+
+/* ── 비밀번호 칸 밑의 안내 줄 ──────────────────────────────────
+   창 아래 한 줄에 사유를 몰아 찍던 것을 칸별로 내렸다. 칸이 셋인데 메시지가 한 곳이면
+   어느 칸을 고쳐야 하는지를 <b>글을 읽고 짐작</b>해야 한다.
+
+   ★ 치는 동안 떴다 사라지는 줄이라 자리를 미리 잡지 않는다(높이 고정 없음).
+     빈 줄을 남겨두면 세 칸 사이가 늘 벌어져, 아무 문제 없을 때도 창이 성기게 보인다.
+     대신 margin 을 작게 잡아 줄이 생겨도 칸이 크게 밀리지 않는다.
+   ------------------------------------------------------------------ */
+.pw-hint {
+    margin: 6px 2px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a12a2a;
+}
+
+.pw-hint[hidden] { display: none; }
+
+/* 확인 칸이 맞았을 때. 글자가 안 보이는 칸이라 '틀렸다는 말이 없음'만으로는 확신하기 어렵다. */
+.pw-hint.is-good { color: #2c6b30; }
+
+/*
+  틀린 칸은 테두리도 물들인다. 줄만 바뀌면 칸이 여러 개일 때 어느 것인지 한 번 더 찾아야 한다.
+  auth.css 의 .auth-input 위에 얹는 것이라 색만 덮는다.
+*/
+.auth-input.is-bad { border-color: #c62828; }
+.auth-input.is-bad:focus { border-color: #c62828; outline-color: #c62828; }
+
+
+/* ── 관리자 PIN 숫자판 ───────────────────────────────────────
+   레일 아이콘을 3초 누르면 뜬다. 맞고 틀림은 서버가 판단한다 —
+   여기 있는 것은 입력을 받는 화면뿐이다.
+*/
+.admin-pin {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;                       /* 지도·패널보다 위 */
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(28, 24, 20, .45);
+}
+
+.admin-pin[hidden] { display: none; }    /* flex 가 hidden 을 이기므로 다시 지정한다 */
+
+.admin-pin-box {
+    width: 260px;
+    padding: 26px 24px 20px;
+    border-radius: 16px;
+    background: var(--cream, #fff);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .25);
+    text-align: center;
+}
+
+.admin-pin-title {
+    margin: 0 0 20px;
+    color: var(--ink, #2b2521);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.admin-pin-dots { display: flex; justify-content: center; gap: 14px; }
+
+.admin-pin-dots span {
+    width: 12px; height: 12px;
+    border: 1.5px solid var(--edge, #d8cec2);
+    border-radius: 50%;
+}
+
+.admin-pin-dots span.is-on { border-color: transparent; background: var(--ink, #2b2521); }
+
+/*
+  실제 입력칸. 점 4개가 대신 보여주므로 이것은 숨긴다.
+  display:none 이면 focus 가 안 잡혀 키보드 입력을 못 받는다 — 그래서 투명하게만 만든다.
+*/
+.admin-pin-input {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; border: 0;
+    opacity: 0;
+}
+
+.admin-pin-msg {
+    margin: 16px 0 0;
+    color: #d64545;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.admin-pin-msg[hidden] { display: none; }
+
+.admin-pin-cancel {
+    margin-top: 18px;
+    border: 0;
+    background: none;
+    color: var(--ink-soft, #7d7166);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.admin-pin-cancel:hover { text-decoration: underline; }
+
+/* 틀렸을 때. 문구만 바뀌면 같은 자리라 바뀐 걸 놓친다 */
+.admin-pin-box.is-wrong { animation: admin-pin-shake .3s; }
+
+@keyframes admin-pin-shake {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-7px); }
+    75%      { transform: translateX(7px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-pin-box.is-wrong { animation: none; }
+}

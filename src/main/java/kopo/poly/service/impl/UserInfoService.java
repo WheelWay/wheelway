@@ -22,6 +22,11 @@ public class UserInfoService implements IUserInfoService {
     }
 
     @Override
+    public UserInfoDTO getMyInfo(UserInfoDTO pDTO) throws Exception {
+        return userInfoMapper.getMyInfo(pDTO);
+    }
+
+    @Override
     public int newPasswordProc(UserInfoDTO pDTO) throws Exception {
         return userInfoMapper.updatePassword(pDTO);
     }
