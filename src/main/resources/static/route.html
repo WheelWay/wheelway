@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>휠체어 경로 확인</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; font-family: "맑은 고딕", sans-serif; }
+        #map { width: 100%; height: 100%; }
+        /* 스크린샷에 좌표를 남기는 표시.
+           왼쪽 아래는 조작판과 카카오 축척바가 차지하므로 오른쪽 아래에 둔다. */
+        #geo {
+            position: fixed; right: 8px; bottom: 8px; z-index: 10000;
+            background: rgba(255,255,255,.92); border: 1px solid #ccc; border-radius: 3px;
+            padding: 3px 7px; font: 11px/1.5 monospace; color: #333; white-space: pre;
+            pointer-events: none;
+        }
+
+        #panel {
+            position: absolute; top: 12px; left: 12px; z-index: 10;
+            width: 300px; padding: 14px 16px;
+            background: rgba(255, 255, 255, .96);
+            border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+            font-size: 13px; line-height: 1.6;
+        }
+        #panel h1 { margin: 0 0 8px; font-size: 15px; }
+        #panel .hint { color: #555; margin-bottom: 10px; }
+        #panel .row { display: flex; justify-content: space-between; }
+        #panel .row span:last-child { font-weight: bold; }
+        #panel hr { border: 0; border-top: 1px solid #e3e3e3; margin: 10px 0; }
+        #panel label { display: block; cursor: pointer; }
+        #panel button {
+            padding: 7px; margin-top: 8px; cursor: pointer;
+            border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 5px; font-size: 13px;
+        }
+        #panel .btns { display: flex; gap: 6px; }
+        #panel .btns button { flex: 1; }
+        #panel a { color: #1565c0; font-size: 12px; }
+
+        #status { padding: 6px 8px; border-radius: 5px; margin-bottom: 8px; }
+        .ok   { background: #e8f5e9; color: #1b5e20; }
+        .fail { background: #ffebee; color: #b71c1c; }
+        .wait { background: #f2f2f2; color: #555; }
+
+        .legend i { display: inline-block; width: 22px; height: 4px; vertical-align: middle; margin-right: 6px; }
+
+        /*
+          출발·도착·공사 표시는 전부 CustomOverlay 로 만들고 clickable 을 켜지 않는다.
+          기본 Marker 는 클릭을 자기가 먹어버려서, 공사 마커 60개가 깔린 지역에서는
+          지도 클릭이 아예 발생하지 않는다. 오버레이는 클릭이 지도로 통과한다.
+        */
+        .pin {
+            padding: 2px 8px; border-radius: 4px; color: #fff;
+            font-size: 12px; font-weight: bold; white-space: nowrap;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .45);
+        }
+        .zone {
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #ff9800; border: 2px solid #fff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+        }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <h1>휠체어 경로 확인</h1>
+    <div class="hint">
+        지도를 클릭해 <b>출발</b> → <b>도착</b> 순으로 찍으세요. 한 번 더 클릭하면 다시 시작합니다.<br>
+        <a href="/route-naver.html" target="_blank">네이버 화면 ↗</a>
+        · <a href="/admin" target="_blank">공사구간 수정 ↗</a>
+    </div>
+
+    <div id="status" class="wait">지도를 불러오는 중…</div>
+
+    <div id="result" style="display:none">
+        <div class="row"><span>총 거리</span><span id="r-dist">-</span></div>
+        <div class="row"><span>지나는 엣지</span><span id="r-edges">-</span></div>
+        <div class="row"><span>탐색 방문 노드</span><span id="r-visited">-</span></div>
+        <div class="row"><span>계산 시간</span><span id="r-ms">-</span></div>
+        <div class="row"><span>스냅(출발/도착)</span><span id="r-snap">-</span></div>
+    </div>
+
+    <div class="btns">
+        <button id="sample">예시 경로</button>
+        <button id="reset">초기화</button>
+    </div>
+
+    <hr>
+
+    <label class="legend"><input type="checkbox" id="t-construction" checked>
+        <i style="background:#ff9800"></i>공사구간 <span id="c-construction"></span></label>
+    <label class="legend" style="margin-left:22px; color:#555">
+        <input type="checkbox" id="t-conline" checked>선으로 표시 (끄면 점만)</label>
+    <label class="legend"><input type="checkbox" id="t-blocked">
+        <i style="background:#e53935"></i>차단된 엣지 <span id="c-blocked"></span></label>
+    <label class="legend"><input type="checkbox" id="t-steps">
+        <i style="background:#7e57c2"></i>계단 <span id="c-steps"></span></label>
+    <label class="legend"><input type="checkbox" id="t-graph">
+        <i style="background:#26a69a"></i>그래프 엣지·노드 <span id="c-graph"></span></label>
+    <div class="hint" id="graph-hint" style="margin-left:22px; color:#888; font-size:11px">
+        화면에 보이는 범위만 그립니다. 확대해야 나옵니다.</div>
+
+    <div class="hint" style="margin-top:8px">공사구간 점에 커서를 올리면 공사명과 기간이 나옵니다.</div>
+
+    <hr>
+    <div id="meta" style="color:#666; font-size:12px"></div>
+</div>
+
+<div id="map"></div>
+<!-- 지도 위에 겹쳐 둔다. 스크린샷을 찍으면 좌표가 같이 찍혀서, 그림만 보고도 픽셀↔좌표 환산이 된다. -->
+<div id="geo"></div>
+
+<script>
+    // 카카오 JS 키는 HTML 에 박아두지 않는다. 그러면 이 파일이 git 에 올라간다.
+    // 서버가 credentials/api_keys.properties 에서 읽어 /api/config 로 내려준다.
+    // 지도 초기 위치와 기본 출발·도착. application.properties 의 wheelway.region-id 와 맞춰야 한다.
+    /*
+      지도를 처음 띄울 자리와 [예시 경로] 가 쓰는 두 점.
+
+      ★ 중심은 박아두지 않는다. region-id 를 바꾸면 서버가 주는 bounds 도 같이 바뀌는데,
+      중심만 남아 있으면 열자마자 데이터가 없는 곳이 뜬다.
+
+      예시 두 점은 bounds 로 만들 수 없어서(가운데 한 점밖에 안 나온다) 지역별로 적어 둔다.
+      맞지 않는 지역으로 갈아타면 [예시 경로] 가 '경로없음' 을 낼 텐데, 그건 이 표를
+      갈아끼우라는 신호다 — 화면 중심이 엉뚱한 곳에 뜨는 것보다 원인이 분명하다.
+    */
+    const CENTER_FALLBACK = [37.5663, 126.9779];   // 서울시청. bounds 를 못 받았을 때만
+    let serviceBounds = null;                      // /api/config 가 준다
+
+    const SAMPLES = {
+        'seoul-junggu':   { from: [37.5663, 126.9779], to: [37.5633, 126.9873] },  // 시청 → 명동성당
+        'chungbuk-boeun': { from: [36.4894, 127.7295], to: [36.4930, 127.7400] },  // 보은읍 중심가
+        'chungbuk-cheongju': { from: [36.6424, 127.4890], to: [36.6360, 127.4900] } // 청주시청 → 성안길
+    };
+    let regionId = null;
+
+    function initialCenter() {
+        if (!serviceBounds) {
+            return CENTER_FALLBACK;
+        }
+        const [minLat, minLng, maxLat, maxLng] = serviceBounds;
+        return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+    }
+
+    /** 지금 지역의 예시 두 점. 표에 없는 지역이면 null 이고, [예시 경로] 는 그렇다고 말한다. */
+    function samplePoints() {
+        return SAMPLES[regionId] || null;
+    }
+
+    let map;
+    let start = null, end = null;
+    let startPin = null, endPin = null, routeLine = null;
+
+    // 오버레이는 한 번 받아서 들고 있는다. 체크박스는 지도에 붙였다 뗐다만 한다.
+    // construction 은 점(지오코딩 지점)과 선(실제 막히는 보도)을 따로 들고 있다.
+    // 선은 교차로에서 사방으로 뻗어 지도가 어지러워질 수 있어 따로 끌 수 있게 했다.
+    const overlays = { construction: [], constructionLine: [], blocked: [], steps: [] };
+    const loaded = { construction: false, blocked: false, steps: false };
+
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(text, cls) {
+        const el = $('status');
+        el.textContent = text;
+        el.className = cls;
+    }
+
+    async function boot() {
+        const cfg = await fetch('/api/config').then(r => r.json());
+
+        if (!cfg.kakaoJsKey) {
+            setStatus('카카오 JavaScript 키가 없습니다. credentials/api_keys.properties 의 kakao.js-key 를 채우세요.', 'fail');
+            return;
+        }
+
+        serviceBounds = cfg.bounds;
+        regionId = cfg.regionId;
+        $('meta').textContent = `${cfg.regionId} · 노드 ${cfg.nodeCount.toLocaleString()}`
+            + ` · 엣지 ${cfg.edgeCount.toLocaleString()} · 차단 ${cfg.blockedCount.toLocaleString()}`;
+        // 지역은 서버가 정한다. 제목에 박아두면 region-id 를 바꿨을 때 거짓말이 된다.
+        document.title = `휠체어 경로 확인 — ${cfg.regionId}`;
+
+        const s = document.createElement('script');
+        s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${cfg.kakaoJsKey}&autoload=false`;
+        s.onerror = () => setStatus('지도 SDK 를 불러오지 못했습니다. 키와 플랫폼 도메인 설정을 확인하세요.', 'fail');
+        s.onload = () => kakao.maps.load(initMap);
+        document.head.appendChild(s);
+    }
+
+    function initMap() {
+        map = new kakao.maps.Map($('map'), {
+            center: new kakao.maps.LatLng(...initialCenter()),
+            level: 5
+        });
+
+        kakao.maps.event.addListener(map, 'click', (e) => onMapClick(e.latLng));
+
+        // 그래프는 다른 오버레이와 달리 화면 범위마다 다시 받아야 한다.
+        // 'idle' 은 이동·확대가 끝난 뒤 한 번만 오므로 따로 디바운스하지 않는다.
+        kakao.maps.event.addListener(map, 'idle', refreshGraph);
+        kakao.maps.event.addListener(map, 'idle', showGeo);
+        showGeo();
+
+        setStatus('출발지를 클릭하세요.', 'wait');
+        toggleOverlay('construction');   // 기본으로 켜둔다
+    }
+
+    function onMapClick(latLng) {
+        // 이미 둘 다 찍혀 있으면 이 클릭이 새 출발지가 된다.
+        if (start && end) {
+            reset();
+        }
+
+        if (!start) {
+            start = latLng;
+            startPin = placePin(latLng, '출발', '#2e7d32');
+            setStatus('도착지를 클릭하세요.', 'wait');
+        } else {
+            end = latLng;
+            endPin = placePin(latLng, '도착', '#c62828');
+            search();
+        }
+    }
+
+    /** 기본 Marker 대신 오버레이를 쓴다. Marker 는 클릭을 먹어서 지도 클릭을 막는다. */
+    function placePin(latLng, text, color) {
+        const el = document.createElement('div');
+        el.className = 'pin';
+        el.style.background = color;
+        el.textContent = text;
+
+        return new kakao.maps.CustomOverlay({
+            position: latLng, content: el, yAnchor: 1.6, zIndex: 5, map: map
+        });
+    }
+
+    async function search() {
+        setStatus('경로를 계산하는 중…', 'wait');
+
+        const url = `/api/route?startLat=${start.getLat()}&startLng=${start.getLng()}`
+            + `&endLat=${end.getLat()}&endLng=${end.getLng()}`;
+
+        let res;
+        try {
+            res = await fetch(url).then(r => r.json());
+        } catch (e) {
+            setStatus('서버 요청 실패: ' + e.message, 'fail');
+            return;
+        }
+
+        if (res.resultStatus !== '성공') {
+            setStatus(`${res.resultStatus} — ${res.message ?? ''}`, 'fail');
+            $('result').style.display = 'none';
+            return;
+        }
+
+        // path 는 [[위도,경도], ...] 라 그대로 LatLng 로 바꾸면 된다.
+        const points = res.path.map(p => new kakao.maps.LatLng(p[0], p[1]));
+
+        routeLine = new kakao.maps.Polyline({
+            path: points, strokeWeight: 7, strokeColor: '#1565c0',
+            strokeOpacity: 0.95, strokeStyle: 'solid', zIndex: 4, map: map
+        });
+
+        setStatus('경로를 찾았습니다.', 'ok');
+        $('result').style.display = 'block';
+        $('r-dist').textContent = `${Math.round(res.distanceM).toLocaleString()} m`;
+        $('r-edges').textContent = `${res.edgeIds.length} 개`;
+        $('r-visited').textContent = `${res.visitedNodes.toLocaleString()} 개`;
+        $('r-ms').textContent = `${res.durationMs} ms`;
+        $('r-snap').textContent = `${res.startSnapM.toFixed(1)} / ${res.endSnapM.toFixed(1)} m`;
+
+        // 경로 전체가 보이도록 지도 범위를 맞춘다.
+        const bounds = new kakao.maps.LatLngBounds();
+        points.forEach(p => bounds.extend(p));
+        map.setBounds(bounds);
+    }
+
+    /**
+     * 지도 위에 중심 좌표·레벨·축척을 찍는다.
+     *
+     * <p>스크린샷만 받아도 <b>픽셀을 좌표로 되돌릴 수 있게</b> 하려고 둔 것이다.
+     * 화면 크기와 m/px 를 같이 적어두면, 그림 속 어느 점이든
+     * {@code 중심 + (픽셀차 × m/px)} 로 위경도를 계산할 수 있다.
+     */
+    function showGeo() {
+        const c = map.getCenter();
+        const el = $('map');
+        const w = el.clientWidth, h = el.clientHeight;
+
+        // 화면 가로가 실제 몇 m 인지로 축척을 낸다. 레벨별 상수를 외우지 않아도 된다.
+        const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+        const spanM = (ne.getLng() - sw.getLng()) * 111320 * Math.cos(c.getLat() * Math.PI / 180);
+        const mpp = spanM / w;
+
+        $('geo').textContent =
+            `중심 ${c.getLat().toFixed(6)}, ${c.getLng().toFixed(6)}  ·  레벨 ${map.getLevel()}\n`
+            + `화면 ${w}×${h}px  ·  ${mpp.toFixed(3)} m/px  ·  가로 ${Math.round(spanM)} m`;
+    }
+
+    /** 클릭 없이 한 번에 확인하는 용도. 클릭이 안 먹는 건지 경로가 안 나오는 건지 구분할 때도 쓴다. */
+    function sampleRoute() {
+        reset();
+        const p = samplePoints();
+        if (!p) {
+            setStatus(`이 지역(${regionId})의 예시 좌표가 없습니다. SAMPLES 에 추가하세요.`, 'fail');
+            return;
+        }
+        start = new kakao.maps.LatLng(p.from[0], p.from[1]);
+        end = new kakao.maps.LatLng(p.to[0], p.to[1]);
+        startPin = placePin(start, '출발', '#2e7d32');
+        endPin = placePin(end, '도착', '#c62828');
+        search();
+    }
+
+    function reset() {
+        [startPin, endPin, routeLine].forEach(o => o && o.setMap(null));
+        start = end = startPin = endPin = routeLine = null;
+        $('result').style.display = 'none';
+        setStatus('출발지를 클릭하세요.', 'wait');
+    }
+
+    // ------------------------------------------------------------ 오버레이
+
+    async function toggleOverlay(kind) {
+        const on = $(`t-${kind}`).checked;
+
+        if (on && !loaded[kind]) {
+            await loadOverlay(kind);
+            loaded[kind] = true;
+        }
+        overlays[kind].forEach(o => o.setMap(on ? map : null));
+
+        if (kind === 'construction') {
+            applyConstructionLines();
+        }
+    }
+
+    /** 공사구간 자체가 켜져 있고 '선으로 표시'도 켜져 있을 때만 선을 그린다. */
+    function applyConstructionLines() {
+        const on = $('t-construction').checked && $('t-conline').checked;
+        overlays.constructionLine.forEach(o => o.setMap(on ? map : null));
+    }
+
+    async function loadOverlay(kind) {
+        if (kind === 'construction') {
+            const zones = await fetch('/api/overlay/construction').then(r => r.json());
+            let lineCount = 0;
+
+            zones.forEach(z => {
+                // 실제로 막히는 보도 구간을 선으로. 원본 '공사구간'은 A~B 형식이지만
+                // A 와 B 가 같은 주소라, 차단되는 엣지를 그리는 것이 실제 범위와 일치한다.
+                (z.segments || []).forEach(s => {
+                    overlays.constructionLine.push(makeLine(s, '#ff9800', 7));
+                    lineCount++;
+                });
+
+                // 지오코딩된 지점. 선 위에 커서를 올릴 수 없어서(폴리라인이 클릭을 먹으면
+                // 지도 클릭이 막힌다) 공사명·기간은 이 점의 툴팁으로 띄운다.
+                const until = z.endDate ? `${z.endDate} 까지` : '종료일 미정';
+                const el = document.createElement('div');
+                el.className = 'zone';
+                el.title = `${z.name}\n${until} 통행 불가\n공사구간: ${z.roadSegment}`;
+
+                overlays.construction.push(new kakao.maps.CustomOverlay({
+                    position: new kakao.maps.LatLng(z.latitude, z.longitude),
+                    content: el, zIndex: 3
+                }));
+
+            });
+            $('c-construction').textContent = `(${zones.length}건 · 구간 ${lineCount})`;
+
+        } else if (kind === 'blocked') {
+            const segs = await fetch('/api/overlay/blocked').then(r => r.json());
+            segs.forEach(s => overlays.blocked.push(makeLine(s, '#e53935', 5)));
+            $('c-blocked').textContent = `(${segs.length})`;
+
+        } else if (kind === 'steps') {
+            // 서버가 GEOMETRY_JSON 문자열을 그대로 준다. 형식이 [[위도,경도],[위도,경도]] 다.
+            const raw = await fetch('/api/overlay/steps').then(r => r.json());
+            raw.forEach(json => overlays.steps.push(makeLine(JSON.parse(json), '#7e57c2', 4)));
+            $('c-steps').textContent = `(${raw.length})`;
+        }
+    }
+
+    // ------------------------------------------------------------ 그래프 (엣지·노드)
+
+    let graphLines = [], graphDots = [], graphBusy = false, graphPending = false;
+
+    /**
+     * 화면에 보이는 범위의 그래프를 다시 그린다.
+     *
+     * 다른 오버레이처럼 한 번 받아 캐시할 수 없다 — 엣지 70,624 / 노드 32,758 을 통째로 그리면
+     * 어느 지도 SDK 든 멈춘다(요금과는 무관하다. 오버레이 추가는 과금 대상이 아니다).
+     * 그래서 bbox 로 잘라 받고, 이동·확대가 끝날 때마다 다시 그린다.
+     *
+     * <p>겹쳐 들어오는 호출은 <b>버리지 않고 끝난 뒤 한 번 더</b> 돌린다.
+     * 그냥 무시하면 마지막 화면 범위가 반영되지 않고, 앞서 지워둔 상태로 남아 지도가 비어 보인다.
+     */
+    async function refreshGraph() {
+        if (graphBusy) {
+            graphPending = true;
+            return;
+        }
+        graphBusy = true;
+        try {
+            do {
+                graphPending = false;
+                await drawGraph();
+            } while (graphPending);
+        } finally {
+            graphBusy = false;
+        }
+    }
+
+    async function drawGraph() {
+        clearGraph();
+        if (!map || !$('t-graph').checked) {
+            $('c-graph').textContent = '';
+            return;
+        }
+
+        const level = map.getLevel();
+        if (level > 6) {
+            $('c-graph').textContent = '(확대 필요)';
+            $('graph-hint').textContent = '너무 넓습니다. 지도를 확대하면 그려집니다.';
+            return;
+        }
+        {
+            const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
+            const g = await fetch('/api/overlay/graph'
+                + `?minLat=${sw.getLat()}&minLng=${sw.getLng()}`
+                + `&maxLat=${ne.getLat()}&maxLng=${ne.getLng()}`).then(r => r.json());
+
+            // 보도는 초록, 차도는 주황. 색이 갈려야 경로가 왜 저 길로 가는지가 보인다.
+            g.road.forEach(s => push(graphLines, makeLine(s, '#e8833a', 2)));
+            g.walk.forEach(s => push(graphLines, makeLine(s, '#26a69a', 2)));
+            g.blocked.forEach(s => push(graphLines, makeLine(s, '#e53935', 3)));
+
+            // 노드는 아주 가까이서만 그린다. 수천 개를 찍으면 선이 안 보인다.
+            const showNodes = level <= 4;
+            if (showNodes) {
+                g.nodes.forEach(p => push(graphDots, new kakao.maps.Circle({
+                    center: new kakao.maps.LatLng(p[0], p[1]), radius: 1.2,
+                    strokeWeight: 0, fillColor: '#004d40', fillOpacity: 0.9, zIndex: 2
+                })));
+            }
+
+            $('c-graph').textContent = `(보도 ${g.walkCount} / 차도 ${g.roadCount}`
+                + ` / 노드 ${showNodes ? g.nodeCount : '－'})`;
+            $('graph-hint').textContent = g.truncated
+                ? `상한 ${g.limit}개를 넘어 잘렸습니다. 더 확대하세요.`
+                : (showNodes ? '초록=보도, 주황=차도, 빨강=차단, 점=노드'
+                             : '초록=보도, 주황=차도, 빨강=차단 · 레벨 4 이하로 확대하면 노드도 보입니다.');
+        }
+    }
+
+    function push(arr, overlay) {
+        overlay.setMap(map);
+        arr.push(overlay);
+    }
+
+    function clearGraph() {
+        graphLines.forEach(o => o.setMap(null));
+        graphDots.forEach(o => o.setMap(null));
+        graphLines = [];
+        graphDots = [];
+    }
+
+    function makeLine(coords, color, weight) {
+        return new kakao.maps.Polyline({
+            path: coords.map(c => new kakao.maps.LatLng(c[0], c[1])),
+            strokeWeight: weight, strokeColor: color, strokeOpacity: 0.8,
+            strokeStyle: 'solid', zIndex: 1
+        });
+    }
+
+    ['construction', 'blocked', 'steps'].forEach(kind =>
+        $(`t-${kind}`).addEventListener('change', () => toggleOverlay(kind)));
+    $('t-conline').addEventListener('change', applyConstructionLines);
+    $('t-graph').addEventListener('change', refreshGraph);
+    $('reset').addEventListener('click', reset);
+    $('sample').addEventListener('click', sampleRoute);
+
+    boot();
+</script>
+</body>
+</html>

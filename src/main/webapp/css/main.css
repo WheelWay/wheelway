@@ -1,0 +1,590 @@
+* { box-sizing: border-box; }
+
+body.main-body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #FDF8F1;
+    color: #111;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+}
+
+.main-shell {
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    background: #FDF8F1;
+}
+
+.main-header {
+    height: 57px;
+    display: flex;
+    align-items: center;
+    padding: 0 0 0 22px;
+    background: #ffdfae;
+}
+
+.main-wordmark {
+    margin-right: auto;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -.8px;
+    text-decoration: none;
+}
+
+.header-actions {
+    display: flex;
+    width: 340px;
+    height: 57px;
+    flex: 0 0 340px;
+    gap: 0;
+    overflow: hidden;
+    border-radius: 28px;
+    background: #ffdfae;
+}
+
+.header-actions.is-member {
+    width: 340px;
+    flex-basis: 340px;
+}
+
+.header-button {
+    min-width: 0;
+    height: 100%;
+    flex: 1 1 50%;
+    display: grid;
+    place-items: center;
+    border-radius: 0;
+    background: #ffdfae;
+    color: #111;
+    font-size: 24px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background-color .15s ease;
+}
+
+.my-page-button {
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.header-button:hover,
+.header-button:focus-visible,
+.header-button:active { background: #ffcc55; }
+
+/* hover 시에는 색상만 변경하고, 헤더 끝까지 네모난 모양을 유지 */
+.header-actions:not(.is-member) .header-button:first-child:hover,
+.header-actions:not(.is-member) .header-button:first-child:focus-visible,
+.header-actions:not(.is-member) .header-button:first-child:active { border-radius: 28px 0 0 28px; }
+
+.header-actions:not(.is-member) .header-button:last-child:hover,
+.header-actions:not(.is-member) .header-button:last-child:focus-visible,
+.header-actions:not(.is-member) .header-button:last-child:active { border-radius: 0 28px 28px 0; }
+
+.header-actions.is-member .header-button:hover,
+.header-actions.is-member .header-button:focus-visible,
+.header-actions.is-member .header-button:active { border-radius: 28px 0 0 28px; }
+
+.main-content {
+    min-height: calc(100vh - 207px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 68px 20px 95px;
+}
+
+.main-hero { text-align: center; }
+.hero-kicker { margin: 0 0 12px; color: #19a885; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; }
+.main-hero h1 { margin: 0; color: #163f79; font-size: clamp(27px, 2.2vw, 38px); font-weight: 800; line-height: 1.25; letter-spacing: -1.8px; }
+.hero-description { margin: 12px 0 0; color: #786552; font-size: clamp(14px, 1vw, 17px); font-weight: 500; }
+
+.main-logo {
+    width: clamp(165px, 12vw, 225px);
+    height: auto;
+    margin-top: 14px;
+}
+
+.transport-menu {
+    display: flex;
+    justify-content: center;
+    gap: clamp(48px, 7.4vw, 155px);
+    margin-top: 22px;
+}
+
+.transport-button {
+    /* ★ 지도·버스는 <a> 다(링크라야 /map.html 로 넘어간다). 링크 기본 밑줄을 지운다 —
+       빼먹으면 버튼 안 글자에 밑줄이 그어져 눌린 것처럼 보인다. */
+    text-decoration: none;
+    width: clamp(105px, 9vw, 145px);
+    height: clamp(105px, 9vw, 145px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    border: 2px solid #c99094;
+    border-radius: 18px;
+    background: #fff1d9;
+    color: #111;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.transport-button:hover,
+.transport-button:focus-visible { background: #ffe5bd; transform: translateY(-4px); box-shadow: 0 10px 20px rgba(87, 65, 45, .14); }
+.transport-icon { width: clamp(48px, 4vw, 72px); height: clamp(48px, 4vw, 72px); }
+.transport-label { font-size: clamp(17px, 1.45vw, 25px); font-weight: 700; line-height: 1; }
+.service-notice { min-height: 20px; margin: 16px 0 0; color: #786552; font-size: 14px; font-weight: 600; opacity: 0; transition: opacity .15s ease; }
+.service-notice.is-visible { opacity: 1; }
+
+.login-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    place-items: center;
+    padding: 20px;
+    background: rgba(45, 45, 45, .18);
+}
+
+.login-modal.is-open,
+.login-modal:target { display: grid; }
+
+.login-modal-card {
+    width: min(700px, calc(100vw - 40px));
+    min-height: 530px;
+    display: grid;
+    grid-template-columns: 1fr 1.08fr;
+    overflow: hidden;
+    border-radius: 16px;
+    background: transparent;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .05);
+}
+
+/* 아이디·비밀번호 찾기는 로고 없이 단일 카드로 표시한다. */
+.login-modal-card.is-compact {
+    width: min(400px, calc(100vw - 40px));
+    min-height: 530px;
+    grid-template-columns: 1fr;
+}
+
+.login-modal-card.is-compact .login-modal-brand { display: none; }
+.login-modal-card.is-compact .login-modal-form-area { padding: 72px 42px 54px; }
+.login-modal-card.is-compact .login-modal-form-area h1 { margin-bottom: 40px; font-size: 30px; }
+.login-modal-card.is-compact .modal-login-field { margin-bottom: 25px; }
+
+.login-modal-form-area {
+    position: relative;
+    min-width: 0;
+    padding: 82px 42px 54px;
+    background: #ffdfae;
+}
+
+.login-modal-form-area h1 {
+    margin: 0 0 45px;
+    text-align: center;
+    font-size: 36px;
+    font-weight: 500;
+}
+
+.modal-panel { display: none; }
+.modal-panel.is-active { display: block; }
+
+#loginPanel .visually-hidden {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 0 7px 2px !important;
+    overflow: visible !important;
+    clip: auto !important;
+    white-space: normal !important;
+    display: block !important;
+    color: #4c3d32;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#loginPanel h1 { margin-bottom: 14px; }
+.modal-login-intro { margin: 0 0 24px; color: #786552; font-size: 12px; line-height: 1.5; text-align: center; }
+#loginPanel .modal-login-field { margin-bottom: 18px; }
+
+.modal-remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 2px;
+    color: #5b4b3e;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.modal-remember input { width: 14px; height: 14px; margin: 0; accent-color: #efad72; }
+
+.login-modal-close {
+    position: absolute;
+    top: 15px;
+    right: 17px;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    color: #765c46;
+    font-size: 30px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-login-field { margin-bottom: 25px; }
+
+.modal-login-field input {
+    width: 100%;
+    height: 48px;
+    padding: 7px 20px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    outline: none;
+    background: #fafafa;
+    color: #111;
+    font-size: 15px;
+}
+
+.modal-login-field input:focus { box-shadow: 0 0 0 2px rgba(201, 144, 148, .2); }
+
+.modal-find-row {
+    display: flex;
+    justify-content: center;
+    gap: 65px;
+    margin-top: 15px;
+}
+
+.modal-find-row a { color: #222; font-size: 12px; text-decoration: none; }
+.modal-find-row a:hover { text-decoration: underline; }
+
+.modal-back-row { margin-top: 18px; text-align: center; }
+.modal-back-row a { color: #222; font-size: 12px; text-decoration: none; }
+.modal-back-row a:hover { text-decoration: underline; }
+
+.modal-login-submit {
+    width: 100%;
+    height: 48px;
+    margin-top: 20px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    background: #efad72;
+    color: #fff;
+    font-size: 19px;
+    cursor: pointer;
+}
+
+/*
+  아이디 찾기 결과 패널. 예전에는 /user/searchUserIdResult 한 장으로 넘어갔는데
+  이제 모달 안에서 보여준다.
+*/
+.modal-result-message {
+    margin: 0;
+    color: #3d342e;
+    font-size: 15px;
+    line-height: 1.8;
+    text-align: center;
+}
+
+.modal-result-message strong { color: #163f79; font-size: 19px; font-weight: 700; }
+
+/* 못 찾았을 때·재설정에 실패했을 때. 같은 자리에 정반대 뜻이 들어오므로 색으로 갈라준다. */
+.modal-result-message.is-fail { color: #b03a3a; }
+
+/*
+  결과 패널의 [로그인] 은 <button> 이 아니라 <a> 다.
+  .modal-login-submit 이 버튼 기준이라 이 셋이 빠진다 - 밑줄이 남고, 글자가 왼쪽에 붙고,
+  padding 이 width 100% 를 밀어낸다.
+*/
+a.modal-login-submit {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    text-decoration: none;
+}
+
+.login-modal-brand {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    padding: 26px 18px;
+    background: #fff;
+}
+
+.login-modal-brand svg { width: min(100%, 335px); height: auto; }
+
+/* 메인에서 열리는 실제 서비스형 로그인 카드 */
+.login-modal-card {
+    width: min(460px, calc(100vw - 40px));
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    border: 1px solid rgba(201, 144, 148, .55);
+    border-radius: 22px;
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .16);
+}
+
+/* 로그인 모달: 로고는 유지하고 보조 문구는 표시하지 않습니다. */
+.login-modal-brand svg text:last-child,
+.modal-login-intro { display: none; }
+
+.login-modal-card > .login-modal-form-area { position: static; }
+.login-modal-close { top: 4px; right: 14px; z-index: 1; }
+
+.login-modal-brand {
+    grid-row: 1;
+    padding: 24px 28px 2px;
+    background: #fff;
+}
+
+.login-modal-brand svg { width: min(100%, 165px); }
+
+.login-modal-form-area {
+    grid-row: 2;
+    padding: 16px 42px 34px;
+    background: #fff;
+}
+
+.login-modal-form-area h1 { color: #163f79; font-size: 30px; font-weight: 700; }
+.modal-login-intro { margin-bottom: 22px; }
+#loginPanel .modal-login-field input { height: 46px; border-radius: 12px; background: #fffdf9; font-size: 15px; }
+.modal-find-row { justify-content: flex-end; gap: 17px; }
+.modal-find-row a { color: #63574d; font-size: 12px; }
+.modal-login-submit { height: 48px; margin-top: 18px; border-radius: 12px; font-size: 17px; box-shadow: 0 5px 10px rgba(171, 111, 65, .14); }
+.login-modal-close { top: 12px; right: 13px; color: #786552; }
+
+.login-modal-card.is-compact {
+    width: min(400px, calc(100vw - 40px));
+    min-height: 0;
+    grid-template-columns: 1fr;
+}
+
+.login-modal-card.is-compact .login-modal-form-area { grid-row: 1; padding: 58px 42px 42px; background: #fff; }
+
+@media (max-width: 560px) {
+    .login-modal-card { grid-template-columns: 1fr; min-height: 0; }
+    .login-modal-brand { min-height: 0; padding-top: 22px; }
+    .login-modal-form-area { padding-top: 43px; }
+}
+
+@media (max-width: 767px) {
+    .main-shell { width: 100%; min-height: 100vh; margin: 0; }
+    .main-header { height: 50px; padding: 0 0 0 14px; }
+    .main-wordmark { font-size: 18px; }
+    .header-actions { width: 144px; height: 38px; flex: 0 0 144px; gap: 0; overflow: hidden; border-radius: 18px; }
+    .header-button { min-width: 0; height: 38px; border-radius: 0; font-size: 13px; }
+    .header-actions:not(.is-member) .header-button:first-child:hover,
+    .header-actions:not(.is-member) .header-button:first-child:focus-visible,
+    .header-actions:not(.is-member) .header-button:first-child:active { border-radius: 18px 0 0 18px; }
+    .header-actions:not(.is-member) .header-button:last-child:hover,
+    .header-actions:not(.is-member) .header-button:last-child:focus-visible,
+    .header-actions:not(.is-member) .header-button:last-child:active { border-radius: 0 18px 18px 0; }
+    .header-actions.is-member { width: 144px; flex-basis: 144px; }
+    .header-actions.is-member .header-button:hover,
+    .header-actions.is-member .header-button:focus-visible,
+    .header-actions.is-member .header-button:active { border-radius: 18px 0 0 18px; }
+    .main-content { min-height: calc(100vh - 74px); padding: 46px 12px 65px; }
+    .hero-kicker { font-size: 10px; }
+    .main-hero h1 { font-size: 27px; }
+    .hero-description { font-size: 13px; }
+    .main-logo { width: 165px; margin-top: 12px; }
+    .transport-menu { width: 100%; gap: 16px; margin-top: 18px; }
+    .modal-login-intro { font-size: 11px; }
+    .transport-button { flex: 1; max-width: 112px; height: 100px; border-radius: 16px; }
+    .transport-label { font-size: 16px; }
+}
+
+/* 1980 x 1080 화면을 기준으로 한 메인 레이아웃 */
+@media (min-width: 1600px) {
+    .main-shell { width: 100%; min-height: 100vh; margin: 0; }
+    .main-header { height: 57px; }
+    .header-actions { width: 340px; height: 57px; flex-basis: 340px; }
+}
+
+/* 실제 서비스형 메인 화면 */
+.main-content {
+    width: min(100%, 1280px);
+    min-height: calc(100vh - 207px);
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(330px, .92fr);
+    grid-template-rows: auto auto auto auto;
+    align-content: center;
+    column-gap: clamp(48px, 7vw, 120px);
+    row-gap: 18px;
+    margin: 0 auto;
+    padding: 70px 56px 58px;
+}
+
+.main-hero { grid-column: 1; grid-row: 1 / span 2; max-width: 600px; text-align: left; }
+.hero-kicker { margin-bottom: 14px; font-size: 12px; letter-spacing: 1.8px; }
+.main-hero h1 { font-size: clamp(37px, 3.15vw, 58px); line-height: 1.18; letter-spacing: -2.8px; }
+.hero-description { max-width: 470px; margin-top: 18px; color: #6f6156; font-size: clamp(15px, 1.1vw, 18px); line-height: 1.65; }
+
+.hero-actions { display: flex; align-items: center; gap: 24px; margin-top: 30px; }
+.hero-primary-button {
+    /* ★ 이것도 <a> 다. inline-flex + align-items 가 없으면 height 52px 안에서
+       글자가 위로 붙는다(button 은 저절로 가운데 오지만 a 는 안 그렇다). */
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    height: 52px;
+    padding: 0 26px;
+    border: 1px solid #d59585;
+    border-radius: 14px;
+    background: #efad72;
+    color: #fff;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 16px rgba(171, 111, 65, .16);
+    transition: transform .15s ease, filter .15s ease;
+}
+.hero-primary-button:hover,
+.hero-primary-button:focus-visible { filter: brightness(.97); transform: translateY(-2px); }
+.hero-secondary-link { color: #163f79; font-size: 15px; font-weight: 700; text-decoration: none; }
+.hero-secondary-link:hover { text-decoration: underline; }
+
+.main-logo {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: center;
+    width: clamp(180px, 13vw, 240px);
+    margin: 0;
+    padding: 8px;
+    background: #fff;
+}
+
+.journey-card {
+    grid-column: 2;
+    grid-row: 2;
+    width: min(100%, 360px);
+    justify-self: center;
+    padding: 22px 24px;
+    border: 1px solid rgba(201, 144, 148, .58);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 8px 18px rgba(92, 70, 50, .07);
+}
+.journey-card-label { display: block; margin-bottom: 8px; color: #19a885; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+.journey-card strong { color: #163f79; font-size: 18px; line-height: 1.38; letter-spacing: -.7px; }
+.journey-card p { margin: 10px 0 14px; color: #746456; font-size: 13px; line-height: 1.55; }
+.journey-card-chip { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #ffdfae; color: #67513d; font-size: 11px; font-weight: 700; }
+
+.transport-menu {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    gap: 18px;
+    margin-top: 42px;
+}
+.transport-button {
+    width: auto;
+    max-width: none;
+    height: 154px;
+    flex: 1 1 0;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 7px;
+    padding: 20px 24px;
+    border-radius: 18px;
+    background: #fff;
+    text-align: left;
+}
+.transport-button:hover,
+.transport-button:focus-visible { background: #fff8ea; }
+.transport-icon { width: 46px; height: 46px; }
+.transport-label { font-size: 20px; }
+.transport-description { color: #78695c; font-size: 13px; font-weight: 500; line-height: 1.4; }
+.service-notice { grid-column: 1 / -1; grid-row: 4; width: 100%; margin-top: 2px; text-align: center; }
+
+@media (max-width: 767px) {
+    .main-content {
+        display: flex;
+        min-height: calc(100vh - 74px);
+        padding: 44px 22px 52px;
+        gap: 0;
+    }
+    .main-hero { width: 100%; text-align: center; }
+    .main-hero h1 { font-size: 33px; letter-spacing: -2px; }
+    .hero-description { margin: 14px auto 0; font-size: 14px; }
+    .hero-actions { justify-content: center; gap: 16px; margin-top: 24px; }
+    .hero-primary-button { height: 46px; padding: 0 18px; font-size: 14px; }
+    .hero-secondary-link { font-size: 13px; }
+    .main-logo { width: 160px; margin: 40px auto 18px; padding: 0; }
+    .journey-card { width: 100%; margin: 0 auto; text-align: left; }
+    .transport-menu { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 32px; }
+    .transport-button { height: auto; min-height: 120px; padding: 18px 20px; }
+    .service-notice { margin-top: 16px; }
+}
+
+/* 상단 흰색 띠와 로고 배경 정리 */
+.main-header { background: #fff; }
+.main-wordmark { color: #efad72; }
+.header-actions,
+.header-button { background: #fff; }
+.main-logo { background: transparent !important; }
+
+/* 상단 로그인·회원가입 타원형 버튼 */
+.header-actions {
+    width: 230px;
+    height: 38px;
+    flex-basis: 230px;
+    gap: 10px;
+    overflow: visible;
+    border-radius: 0;
+    background: transparent;
+}
+.header-actions.is-member { width: 230px; flex-basis: 230px; }
+.main-header .header-actions { margin-right: 72px; }
+.header-button {
+    height: 38px;
+    border-radius: 999px !important;
+    background: #efad72;
+    color: #fff;
+    font-size: 16px;
+    box-shadow: 0 3px 7px rgba(171, 111, 65, .12);
+}
+.header-button:hover,
+.header-button:focus-visible,
+.header-button:active { border-radius: 999px !important; background: #e69c61; color: #fff; }
+
+@media (max-width: 767px) {
+    .header-actions,
+    .header-actions.is-member { width: 130px; height: 32px; flex-basis: 130px; gap: 6px; }
+    .main-header .header-actions { margin-right: 18px; }
+    .header-button { height: 32px; font-size: 12px; }
+}
+
+/* 메인 로그인 비밀번호 보기/숨김 */
+.modal-password-wrap { position: relative; }
+.modal-password-wrap input { padding-right: 48px; }
+.modal-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #8e8e8e;
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+.modal-password-toggle:hover,
+.modal-password-toggle:focus-visible { color: #163f79; }
+.modal-password-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+
+/* 닫기 버튼은 로그인 카드 자체의 오른쪽 위 모서리에 배치합니다. */
+.login-modal-card { position: relative; }
+.login-modal-card > .login-modal-form-area { position: static; }
+.login-modal-card .login-modal-close { top: 4px; right: 14px; z-index: 2; }

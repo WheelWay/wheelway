@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  사용자가 등록한 장소. 지도 왼쪽 위 '집 / 회사 / 자주가는 경로' 버튼이 가리키는 값이다.
+
+  ★ 이 표가 들고 있는 것은 좌표다. ADDRESS 는 사람이 확인하려고 남기는 것이고
+    길찾기가 쓰는 값은 LATITUDE/LONGITUDE 다. 카카오 우편번호 API 가 좌표를 주지 않아서
+    등록하는 순간 주소검색으로 한 번 변환해 박는다.
+
+  날짜를 문자열로 뽑는 것은 화면에 그대로 찍기 위해서다(다른 매퍼와 같은 방식).
+-->
+<mapper namespace="kopo.poly.mapper.IUserPlaceMapper">
+
+    <sql id="columns">
+        ID
+             , USERNAME
+             , PLACE_TYPE
+             , LABEL
+             , ZONECODE
+             , ADDRESS
+             , ADDRESS_DETAIL
+             , LATITUDE
+             , LONGITUDE
+             , REGION_ID
+             , DATE_FORMAT(CREATED_AT, '%Y-%m-%d %H:%i')  AS CREATED_AT
+             , DATE_FORMAT(UPDATED_AT, '%Y-%m-%d %H:%i')  AS UPDATED_AT
+    </sql>
+
+    <!--
+      집 → 회사 → 즐겨찾기 순.
+
+      FIELD() 로 정렬 순서를 박는다. PLACE_TYPE 을 그냥 정렬하면 알파벳순이라
+      FAV, HOME, WORK 가 되어 즐겨찾기가 집보다 위로 온다. 화면의 버튼 순서와
+      어긋나면 사용자가 매번 눈으로 찾아야 한다.
+    -->
+    <select id="getPlaces" resultType="UserPlaceDTO">
+        SELECT <include refid="columns"/>
+          FROM USER_PLACES
+         WHERE USERNAME = #{username}
+         ORDER BY FIELD(PLACE_TYPE, 'HOME', 'WORK', 'FAV'), LABEL
+    </select>
+
+    <!--
+      LIMIT 1 인 이유: HOME/WORK 는 UQ 로 하나뿐이라 사실 필요가 없지만,
+      FAV 로 부르면 여러 건이 나와 매퍼가 TooManyResultsException 을 던진다.
+      최근 것을 준다 — 여러 개인 종류를 하나만 물었다면 최근 것이 맞다.
+    -->
+    <select id="getPlace" resultType="UserPlaceDTO">
+        SELECT <include refid="columns"/>
+          FROM USER_PLACES
+         WHERE USERNAME   = #{username}
+           AND PLACE_TYPE = #{placeType}
+         ORDER BY ID DESC
+         LIMIT 1
+    </select>
+
+    <!--
+      등록 또는 덮어쓰기.
+
+      ★ UQ_USER_PLACES(USERNAME, PLACE_TYPE, LABEL) 에 걸리면 UPDATE 로 넘어간다.
+        집을 다시 등록하는 것은 '두 번째 집'이 아니라 '이사'다. INSERT 로만 두면
+        사용자가 먼저 지워야 주소를 고칠 수 있다.
+
+      ★ ID 는 갱신하지 않는다. 나중에 다른 표가 장소를 가리키게 되면
+        주소를 고칠 때마다 그 참조가 끊긴다.
+
+      UPDATED_AT 은 컬럼의 ON UPDATE CURRENT_TIMESTAMP 가 채운다. 단,
+      모든 값이 그대로면 MariaDB 가 UPDATE 를 생략해서 UPDATED_AT 도 안 바뀐다 —
+      '같은 주소를 다시 눌렀다'는 기록할 것이 없으므로 그게 맞는 동작이다.
+    -->
+    <insert id="upsertPlace" parameterType="UserPlaceDTO"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO USER_PLACES (
+            USERNAME, PLACE_TYPE, LABEL, ZONECODE,
+            ADDRESS, ADDRESS_DETAIL, LATITUDE, LONGITUDE, REGION_ID
+        ) VALUES (
+            #{username}, #{placeType}, #{label}, #{zonecode},
+            #{address}, #{addressDetail}, #{latitude}, #{longitude}, #{regionId}
+        )
+        ON DUPLICATE KEY UPDATE
+            ZONECODE       = VALUES(ZONECODE),
+            ADDRESS        = VALUES(ADDRESS),
+            ADDRESS_DETAIL = VALUES(ADDRESS_DETAIL),
+            LATITUDE       = VALUES(LATITUDE),
+            LONGITUDE      = VALUES(LONGITUDE),
+            REGION_ID      = VALUES(REGION_ID)
+    </insert>
+
+    <!-- USERNAME 을 조건에 같이 넣는다 — ID 만으로 지우면 남의 장소를 지울 수 있다. -->
+    <delete id="deletePlace">
+        DELETE FROM USER_PLACES
+         WHERE ID       = #{id}
+           AND USERNAME = #{username}
+    </delete>
+
+</mapper>

@@ -1,0 +1,473 @@
+* { box-sizing: border-box; }
+
+body.auth-body {
+    min-width: 320px;
+    margin: 0;
+    background: #f3f3f3;
+    color: #171717;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+}
+
+.auth-header {
+    height: 57px;
+    display: flex;
+    align-items: center;
+    padding: 0 22px;
+    background: #ffdfae;
+}
+
+.auth-wordmark {
+    margin-right: auto;
+    color: #fff;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -.8px;
+    text-decoration: none;
+}
+
+.auth-home-link {
+    min-width: 112px;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: #171717;
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background-color .15s ease;
+}
+
+.auth-home-link:hover,
+.auth-home-link:focus-visible { background: #ffcc55; }
+
+.auth-page {
+    min-height: calc(100vh - 57px);
+    display: grid;
+    place-items: center;
+    padding: 2.5rem 1rem;
+}
+
+.auth-card {
+    width: min(100%, 340px);
+    min-height: auto;
+    padding: 30px 30px 28px;
+    border: 1px solid rgba(201, 144, 148, .5);
+    border-radius: 14px;
+    background: #ffdfae;
+    box-shadow: 0 14px 32px rgba(74, 56, 39, .09);
+}
+
+.auth-card h1 {
+    margin: 0 0 24px;
+    text-align: center;
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.auth-field { margin-bottom: 16px; }
+
+.auth-label {
+    display: block;
+    margin: 0 0 6px 4px;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.auth-input {
+    width: 100%;
+    height: 30px;
+    padding: 3px 12px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    outline: none;
+    background: #fbfbfb;
+    color: #171717;
+    font-size: 11px;
+}
+
+.auth-input:focus { box-shadow: 0 0 0 2px rgba(201, 144, 148, .2); }
+.auth-input::placeholder { color: #777; opacity: 1; }
+
+.auth-button {
+    display: block;
+    width: 100%;
+    height: 32px;
+    margin-top: 26px;
+    padding: 0 8px;
+    border: 1px solid #c99094;
+    border-radius: 999px;
+    background: #efad72;
+    color: #fff;
+    font-size: 12px;
+    line-height: 30px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.auth-button:hover { filter: brightness(.97); }
+.auth-button:focus-visible { outline: 2px solid #1d75d7; outline-offset: 2px; }
+
+.auth-link-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 10px;
+}
+
+.auth-link-row a { color: #4b4b4b; text-decoration: none; }
+.auth-link-row a:hover { text-decoration: underline; }
+
+.auth-message {
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.login-card {
+    width: min(100%, 565px);
+    min-height: 376px;
+    display: grid;
+    grid-template-columns: 1fr 1.025fr;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    border-radius: 16px;
+    background: #fff;
+}
+
+.login-form-area {
+    min-width: 0;
+    padding: 54px 22px 32px;
+    background: #ffdfae;
+}
+
+.login-form-area .visually-hidden {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 0 7px 2px !important;
+    overflow: visible !important;
+    clip: auto !important;
+    white-space: normal !important;
+    display: block !important;
+    color: #4c3d32;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.login-intro {
+    margin: -20px 0 24px;
+    color: #786552;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.login-form-area h1 { margin-bottom: 32px; font-size: 34px; }
+.login-form-area .auth-field { margin-bottom: 18px; }
+.login-form-area .auth-input { height: 37px; padding: 5px 19px; font-size: 14px; }
+.login-form-area .auth-button { height: 41px; margin-top: 16px; font-size: 18px; line-height: 39px; box-shadow: 0 5px 10px rgba(171, 111, 65, .14); }
+
+.login-find-row {
+    display: flex;
+    justify-content: center;
+    gap: 54px;
+    margin-top: 10px;
+}
+
+.login-find-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #222;
+    font-size: 11px;
+    text-decoration: none;
+}
+
+.login-find-link span {
+    width: 11px;
+    height: 11px;
+    background: #fff;
+}
+
+.login-find-link:hover { text-decoration: underline; }
+
+.login-remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 18px;
+    color: #5b4b3e;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.login-remember input { width: 14px; height: 14px; margin: 0; accent-color: #efad72; }
+
+.login-signup-guide {
+    margin: 16px 0 0;
+    color: #786552;
+    font-size: 11px;
+    text-align: center;
+}
+
+.login-signup-guide a { margin-left: 4px; color: #163f79; font-weight: 700; text-decoration: none; }
+.login-signup-guide a:hover { text-decoration: underline; }
+
+.login-brand {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    padding: 18px 13px;
+    background: #fff;
+    text-align: center;
+}
+
+.wheelway-logo {
+    display: block;
+    width: min(100%, 250px);
+    height: auto;
+    aspect-ratio: 250 / 210;
+}
+.brand-caption { display: none; }
+
+.result-card { min-height: auto; text-align: center; }
+.result-card .auth-button { margin-top: 22px; }
+
+@media (min-width: 768px) {
+    .auth-card { width: 390px; min-height: auto; padding: 38px 40px 34px; }
+    .auth-card h1 { margin-bottom: 30px; font-size: 28px; }
+    .auth-field { margin-bottom: 20px; }
+    .auth-label { margin-bottom: 8px; font-size: 12px; }
+    .auth-input { height: 35px; padding: 4px 15px; font-size: 12px; }
+    .auth-button { height: 37px; margin-top: 30px; font-size: 14px; line-height: 35px; }
+    .auth-link-row { margin-top: 16px; font-size: 12px; }
+    .auth-message { font-size: 13px; }
+    .login-card { width: min(70vw, 720px); min-height: 0; aspect-ratio: 1.55 / 1; }
+    .login-form-area { padding: 11% 8% 7%; }
+    .login-form-area h1 { margin-bottom: 7%; font-size: clamp(34px, 3vw, 56px); }
+    .login-intro { margin: 0 0 8%; font-size: clamp(12px, .9vw, 15px); }
+    .login-form-area .visually-hidden { margin-bottom: clamp(5px, .5vw, 8px) !important; font-size: clamp(12px, .9vw, 15px); }
+    .login-form-area .auth-field { margin-bottom: 5%; }
+    .login-form-area .auth-input { height: clamp(37px, 3.3vw, 55px); font-size: clamp(14px, 1.2vw, 20px); }
+    .login-form-area .auth-button { height: clamp(37px, 3.3vw, 55px); margin-top: 7%; font-size: clamp(18px, 1.7vw, 28px); line-height: normal; }
+    .login-find-row { gap: 19%; margin-top: 1%; }
+    .login-find-link { gap: 8px; font-size: clamp(11px, 1vw, 16px); }
+    .login-find-link span { width: clamp(11px, 1vw, 16px); height: clamp(11px, 1vw, 16px); }
+    .login-remember { margin-top: 5%; font-size: clamp(11px, .9vw, 15px); }
+    .login-signup-guide { margin-top: 5%; font-size: clamp(11px, .9vw, 15px); }
+    .wheelway-logo { width: min(100%, 450px); }
+}
+
+@media (max-width: 420px) {
+    .auth-header { height: 50px; padding-left: 14px; }
+    .auth-wordmark { font-size: 18px; }
+    .auth-home-link { min-width: 78px; font-size: 13px; }
+    .auth-page { min-height: calc(100vh - 50px); }
+    .login-card { width: min(100%, 330px); grid-template-columns: 1fr; }
+    .login-brand { min-height: 130px; }
+    .login-form-area { padding: 30px 18px 24px; }
+    .login-form-area h1 { margin-bottom: 16px; font-size: 25px; }
+    .login-intro { margin: 0 0 16px; font-size: 10px; }
+    .login-form-area .visually-hidden { margin-bottom: 4px !important; font-size: 9px; }
+    .login-form-area .auth-field { margin-bottom: 10px; }
+    .login-form-area .auth-input { height: 27px; font-size: 10px; }
+    .login-form-area .auth-button { height: 29px; margin-top: 11px; font-size: 12px; line-height: 27px; }
+    .login-find-row { gap: 24px; margin-top: 7px; }
+    .login-find-link { gap: 5px; font-size: 9px; }
+    .login-find-link span { width: 9px; height: 9px; }
+    .login-remember { margin-top: 10px; font-size: 9px; }
+    .login-signup-guide { margin-top: 10px; font-size: 9px; }
+}
+
+/* 실제 서비스형 단일 로그인 카드 */
+.auth-page:has(.login-card) { background: linear-gradient(180deg, #fff8ed 0, #f3f3f3 48%); }
+
+.login-card {
+    width: min(100%, 460px);
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    aspect-ratio: auto;
+    overflow: hidden;
+    border: 1px solid rgba(201, 144, 148, .55);
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .12);
+}
+
+.login-brand {
+    grid-row: 1;
+    min-height: 0;
+    padding: 28px 32px 6px;
+    background: #fff;
+}
+
+.wheelway-logo { width: min(100%, 170px); }
+
+.login-form-area {
+    grid-row: 2;
+    padding: 18px 42px 34px;
+    background: #fff;
+}
+
+.login-form-area h1 { margin-bottom: 8px; color: #163f79; font-size: 30px; }
+.login-intro { margin: 0 0 24px; font-size: 13px; }
+.login-form-area .visually-hidden { color: #3d342e; font-size: 13px; }
+.login-form-area .auth-field { margin-bottom: 17px; }
+.login-form-area .auth-input { height: 46px; border-radius: 12px; background: #fffdf9; font-size: 15px; }
+.login-find-row { justify-content: flex-end; gap: 17px; margin-top: 16px; }
+.login-find-link { color: #63574d; font-size: 12px; }
+.login-find-link span { display: none; }
+.login-remember { margin-top: 15px; }
+.login-form-area .auth-button { height: 48px; margin-top: 18px; border-radius: 12px; font-size: 17px; line-height: 46px; }
+.login-signup-guide { margin-top: 18px; font-size: 12px; }
+
+@media (max-width: 420px) {
+    .login-card { width: min(100%, 350px); border-radius: 18px; }
+    .login-brand { padding: 23px 25px 4px; }
+    .wheelway-logo { width: 145px; }
+    .login-form-area { padding: 15px 25px 28px; }
+    .login-form-area h1 { font-size: 26px; }
+    .login-intro { margin-bottom: 19px; font-size: 11px; }
+    .login-form-area .auth-input { height: 40px; font-size: 13px; }
+    .login-form-area .auth-button { height: 42px; line-height: 40px; }
+}
+
+/* 로그인 보조 기능을 한 줄로 정리 */
+.login-form-area form { display: flex; flex-wrap: wrap; align-items: center; }
+.login-form-area .auth-field { width: 100%; }
+.login-form-area .auth-field:nth-of-type(1) { order: 1; }
+.login-form-area .auth-field:nth-of-type(2) { order: 2; }
+.login-remember { order: 3; margin-top: 2px; }
+.login-find-row { order: 4; margin: 2px 0 0 auto; }
+.login-form-area .auth-button { order: 5; }
+.login-signup-guide { width: 100%; order: 6; }
+
+@media (min-width: 768px) {
+    .login-brand { padding-top: 22px; padding-bottom: 0; }
+    .wheelway-logo { width: 152px; }
+    .login-form-area { padding-top: 10px; padding-bottom: 28px; }
+    .login-form-area .auth-field { margin-bottom: 14px; }
+    .login-intro { margin-bottom: 20px; }
+}
+
+@media (max-width: 420px) {
+    .login-remember { margin-top: 1px; }
+    .login-find-row { gap: 12px; margin-top: 1px; }
+}
+
+/* 아이디 찾기 */
+.auth-page:has(.id-find-card) { background: linear-gradient(180deg, #ffdfae 0, #ffefdc 100%); }
+.id-find-card {
+    width: min(100%, 460px);
+    min-height: 0;
+    padding: 42px 44px 34px;
+    border: 1px solid rgba(201, 144, 148, .55);
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .12);
+}
+.id-find-card h1 { margin-bottom: 10px; color: #163f79; font-size: 30px; }
+.find-page-intro { margin: 0 0 28px; text-align: center; }
+.find-page-intro span { display: block; margin-bottom: 8px; color: #19a885; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; }
+.find-page-intro p { margin: 0; color: #78695c; font-size: 13px; line-height: 1.5; }
+.id-find-card .auth-field { margin-bottom: 19px; }
+.id-find-card .auth-label { margin: 0 0 8px 2px; color: #3d342e; font-size: 13px; font-weight: 700; }
+.id-find-card .auth-input { height: 46px; border-radius: 12px; background: #fffdf9; font-size: 15px; }
+.id-find-card .auth-button { height: 48px; margin-top: 9px; border-radius: 12px; font-size: 17px; line-height: 46px; box-shadow: 0 5px 10px rgba(171, 111, 65, .14); }
+.find-security-note { margin: 18px 0 0; color: #8a7869; font-size: 11px; line-height: 1.45; text-align: center; }
+.id-find-card .auth-link-row { gap: 18px; margin-top: 20px; font-size: 12px; }
+.id-find-card .auth-link-row a { color: #63574d; }
+
+@media (max-width: 420px) {
+    .id-find-card { width: min(100%, 350px); padding: 34px 26px 28px; border-radius: 18px; }
+    .id-find-card h1 { font-size: 26px; }
+    .find-page-intro { margin-bottom: 23px; }
+    .find-page-intro p { font-size: 11px; }
+    .id-find-card .auth-input { height: 40px; font-size: 13px; }
+    .id-find-card .auth-button { height: 42px; line-height: 40px; }
+}
+
+/* 아이디 찾기와 통일한 로그인 화면 */
+.auth-page:has(.login-card) { background: linear-gradient(180deg, #ffdfae 0, #ffefdc 100%); }
+.login-card {
+    width: min(100%, 460px);
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    padding: 0;
+    border-radius: 22px;
+    background: #fff;
+}
+.login-card .login-brand { display: none; }
+.login-card .login-form-area { grid-row: 1; padding: 42px 44px 34px; background: #fff; }
+.login-card .login-form-area h1 { margin-bottom: 10px; font-size: 30px; }
+.login-card .login-intro { margin-bottom: 28px; }
+.login-card .auth-field { margin-bottom: 19px; }
+.login-card .auth-input { height: 46px; border-radius: 12px; }
+.login-card .auth-button { height: 48px; border-radius: 12px; line-height: 46px; }
+.login-card .login-signup-guide { margin-top: 20px; }
+
+@media (max-width: 420px) {
+    .login-card { width: min(100%, 350px); border-radius: 18px; }
+    .login-card .login-form-area { padding: 34px 26px 28px; }
+    .login-card .login-form-area h1 { font-size: 26px; }
+    .login-card .auth-input { height: 40px; }
+    .login-card .auth-button { height: 42px; line-height: 40px; }
+}
+
+/* 비밀번호 찾기 */
+.auth-page:has(.password-find-card) { background: linear-gradient(180deg, #ffdfae 0, #ffefdc 100%); }
+.password-find-card {
+    width: min(100%, 460px);
+    min-height: 0;
+    padding: 42px 44px 34px;
+    border: 1px solid rgba(201, 144, 148, .55);
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(74, 56, 39, .12);
+}
+.password-find-card h1 { margin-bottom: 10px; color: #163f79; font-size: 30px; }
+.password-find-card .auth-field { margin-bottom: 17px; }
+.password-find-card .auth-label { margin: 0 0 8px 2px; color: #3d342e; font-size: 13px; font-weight: 700; }
+.password-find-card .auth-input { height: 46px; border-radius: 12px; background: #fffdf9; font-size: 15px; }
+.password-find-card .auth-button { height: 48px; margin-top: 11px; border-radius: 12px; font-size: 17px; line-height: 46px; box-shadow: 0 5px 10px rgba(171, 111, 65, .14); }
+.password-find-card .auth-link-row { gap: 18px; margin-top: 20px; font-size: 12px; }
+.password-find-card .auth-link-row a { color: #63574d; }
+
+@media (max-width: 420px) {
+    .password-find-card { width: min(100%, 350px); padding: 34px 26px 28px; border-radius: 18px; }
+    .password-find-card h1 { font-size: 26px; }
+    .password-find-card .auth-input { height: 40px; font-size: 13px; }
+    .password-find-card .auth-button { height: 42px; line-height: 40px; }
+}
+
+/* 로그인 비밀번호 보기/숨김 */
+.login-password-wrap { position: relative; }
+.login-password-wrap .auth-input { padding-right: 48px; }
+.login-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #8e8e8e;
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+.login-password-toggle:hover,
+.login-password-toggle:focus-visible { color: #163f79; }
+.login-password-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }

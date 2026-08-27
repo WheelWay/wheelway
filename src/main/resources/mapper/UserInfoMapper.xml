@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="kopo.poly.mapper.IUserInfoMapper">
+    <!-- Login compares the SHA-256 hash of the supplied password. -->
+    <select id="getLogin" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME,
+            ROLE,
+            WHEELCHAIR_TYPE
+        FROM USERS
+        WHERE USERNAME = #{username}
+          AND PASSWORD_HASH = #{passwordHash}
+    </select>
+
+    <!-- 아이디 찾기: 이름과 AES 암호화 이메일로 USERNAME을 조회한다.
+         비밀번호 찾기에서는 USERNAME까지 함께 비교한다. -->
+    <select id="getUserId" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME
+        FROM USERS
+        WHERE NAME = #{name}
+          AND EMAIL = #{email}
+        <if test="username != null and username != ''">
+            AND USERNAME = #{username}
+        </if>
+    </select>
+
+    <!--
+      마이페이지가 쓰는 내 정보 조회.
+
+      ★ getUserId 를 재사용하지 않는다. 그쪽은 '이름 + 이메일로 아이디를 찾는' 조회라
+        찾는 방향이 정반대다(여기는 아이디를 이미 알고 값을 꺼낸다). 조건을 <if> 로
+        늘려 하나로 합치면 아이디 찾기가 '아이디만으로도 도는' 조회가 되어버린다.
+
+      EMAIL 은 AES 로 들어 있다. 푸는 것은 화면에 내보내기 직전에 컨트롤러가 한다 —
+      매퍼가 풀어 내리면 이 조회를 부르는 다른 곳이 생겼을 때 평문이 같이 따라 나간다.
+
+      PASSWORD_HASH 는 뽑지 않는다. 마이페이지는 비밀번호를 '보여주는' 화면이 아니라
+      '바꾸는' 화면이라 값을 알 필요가 없다. 대조는 getLogin 이 한다.
+    -->
+    <select id="getMyInfo" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT
+            USERNAME,
+            NAME,
+            EMAIL,
+            WHEELCHAIR_TYPE
+        FROM USERS
+        WHERE USERNAME = #{username}
+    </select>
+
+    <!-- 비밀번호 재설정 -->
+    <update id="updatePassword" parameterType="UserInfoDTO">
+        UPDATE USERS
+        SET PASSWORD_HASH = #{passwordHash}
+        WHERE USERNAME = #{username}
+    </update>
+
+    <!-- 회원 가입 전 아이디 중복체크 -->
+    <select id="getUsernameExists" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT IF(COUNT(USERNAME) &gt; 0, 'Y', 'N') AS EXISTS_YN
+        FROM USERS
+        WHERE USERNAME = #{username}
+    </select>
+
+    <!-- 회원 가입 전 이메일 중복체크 -->
+    <select id="getEmailExists" parameterType="UserInfoDTO" resultType="UserInfoDTO">
+        SELECT IF(COUNT(USERNAME) &gt; 0, 'Y', 'N') AS EXISTS_YN
+        FROM USERS
+        WHERE EMAIL = #{email}
+    </select>
+
+    <!-- 회원 가입하기(회원정보 등록하기) -->
+    <insert id="insertUserInfo" parameterType="UserInfoDTO">
+        INSERT INTO USERS
+        (
+            USERNAME,
+            PASSWORD_HASH,
+            NAME,
+            EMAIL,
+            ROLE,
+            WHEELCHAIR_TYPE,
+            PRIVACY_AGREED_AT
+        )
+        VALUES
+        (
+            #{username},
+            #{passwordHash},
+            #{name},
+            #{email},
+            #{role},
+            #{wheelchairType},
+            #{privacyAgreedAt}
+        )
+    </insert>
+</mapper>

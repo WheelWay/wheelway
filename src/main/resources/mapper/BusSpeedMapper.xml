@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  노선별·시간대별 주행 속도 관측 누적(BUS_ROUTE_SPEED).
+
+  이 표가 하는 일은 하나다 — 재기동한 직후에도 '이 노선이 이 시간대에 얼마나 빠른가'를
+  알고 시작하는 것. 그 앎이 없으면 모든 노선이 상수 19km/h 로 떨어지는데,
+  그 값은 실측 대비 평균 27.9% 틀린다(청주 61개 노선, 2026-08-22).
+
+  ★ 시간대로 쪼갠 만큼 버킷마다 표본이 얇다. 메모리에만 두면 저녁 버킷을 채우려고
+  저녁까지 기다려야 한다 — 이 표가 그 기다림을 없앤다.
+
+  ★ FIRST_SEEN 은 처음 값을 지키고 LAST_SEEN 만 갱신한다. BUS_LOW_FLOOR_SEEN 과 같은 규칙이다.
+  언제부터 쌓인 값인지가 나중에 '이 값이 너무 오래된 것 아닌가'를 볼 때 유일한 단서가 된다.
+-->
+<mapper namespace="kopo.poly.mapper.IBusSpeedMapper">
+
+    <select id="getSpeeds" resultType="kopo.poly.dto.RouteSpeedDTO">
+        SELECT REGION_ID AS regionId
+             , ROUTE_NO  AS routeNo
+             , BUCKET    AS bucket
+             , METERS    AS meters
+             , SECONDS   AS seconds
+          FROM BUS_ROUTE_SPEED
+         WHERE REGION_ID = #{regionId}
+    </select>
+
+    <insert id="upsertSpeed">
+        INSERT INTO BUS_ROUTE_SPEED
+            (REGION_ID, ROUTE_NO, BUCKET, METERS, SECONDS, FIRST_SEEN, LAST_SEEN)
+        VALUES
+            (#{speed.regionId}, #{speed.routeNo}, #{speed.bucket},
+             #{speed.meters}, #{speed.seconds}, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+              METERS     = VALUES(METERS)
+            , SECONDS    = VALUES(SECONDS)
+            , FIRST_SEEN = COALESCE(FIRST_SEEN, VALUES(FIRST_SEEN))
+            , LAST_SEEN  = NOW()
+    </insert>
+</mapper>
